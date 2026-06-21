@@ -1,0 +1,246 @@
+\documentclass[12pt,a4paper]{report}
+
+%% ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{csquotes}
+
+%% ---
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+
+%% ---
+\usepackage{background}
+\usepackage[absolute]{textpos}
+\setlength{\TPHorizModule}{1cm}
+\setlength{\TPVertModule}{1cm}
+
+%% ---
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+%% ---
+\usepackage{graphicx}
+\graphicspath{{figures/}{images/}{./}}
+\DeclareGraphicsExtensions{.png,.jpg,.jpeg,.pdf,.eps}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[section]{placeins}
+
+%% ---
+\usepackage[dvipsnames,svgnames,table]{xcolor}
+\definecolor{uveyblue}{RGB}{0,80,160}
+\definecolor{uveylight}{RGB}{235,243,255}
+
+%% ---
+\usepackage{listings}
+\lstset{
+  basicstyle=\small\ttfamily,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue}\bfseries,
+  stringstyle=\color{orange},
+  commentstyle=\color{gray}\itshape,
+  showstringspaces=false,
+  tabsize=2,
+  captionpos=b,
+}
+\lstdefinelanguage{Dockerfile}{
+  keywords={FROM,RUN,CMD,EXPOSE,ENV,ADD,COPY,WORKDIR,USER,ENTRYPOINT,VOLUME,ARG},
+  morecomment=[l]{\#},
+  morestring=[b]",
+}
+\lstdefinelanguage{YAML}{
+  keywords={true,false,null,yes,no},
+  keywordstyle=\color{blue}\bfseries,
+  sensitive=false,
+  comment=[l]{\#},
+  commentstyle=\color{gray}\itshape,
+  morestring=[b]',
+  morestring=[b]",
+}
+\lstdefinelanguage{Terraform}{
+  keywords={resource,variable,output,module,locals,data,provider,terraform},
+  keywordstyle=\color{blue}\bfseries,
+  comment=[l]{\#},
+  commentstyle=\color{gray}\itshape,
+  morestring=[b]",
+}
+
+%% ---
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{colortbl}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+
+%% ---
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}
+\usepackage{url}
+
+%% ---
+\usepackage[numbers,sort&compress]{natbib}
+
+%% ---
+\usepackage{enumitem}
+\setlist[itemize]{leftmargin=*, topsep=3pt, itemsep=1pt, parsep=0pt}
+\setlist[enumerate]{leftmargin=*, topsep=3pt, itemsep=1pt, parsep=0pt}
+\usepackage{mdframed}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\usepackage{acronym}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,shapes,positioning,fit,backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage[bottom]{footmisc}
+\setlength{\textfloatsep}{10pt plus 2pt minus 4pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{14pt}{6pt}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
+\titlespacing*{\subsubsection}{0pt}{8pt}{3pt}
+
+%% ---
+\tcbset{
+  defbox/.style={
+    enhanced, breakable,
+    colback=blue!5, colframe=blue!60!black,
+    fonttitle=\bfseries,
+    boxrule=0.5pt, arc=4pt
+  },
+  notebox/.style={
+    enhanced, breakable,
+    colback=yellow!10, colframe=orange!70!black,
+    fonttitle=\bfseries, title={Remarque},
+    boxrule=0.5pt, arc=4pt
+  },
+  warnbox/.style={
+    enhanced, breakable,
+    colback=red!5, colframe=red!60!black,
+    fonttitle=\bfseries, title={Important},
+    boxrule=0.5pt, arc=4pt
+  }
+}
+
+%% ---
+\newcommand{\tech}[1]{\texttt{\textbf{#1}}}
+\newcommand{\figref}[1]{(cf.~figure~\ref{#1})}
+\newcommand{\tabref}[1]{(cf.~tableau~\ref{#1})}
+\newcommand{\secref}[1]{(cf.~section~\ref{#1})}
+\newcommand{\chapref}[1]{(cf.~chapitre~\ref{#1})}
+\newcommand{\imgsource}[2]{%
+  \par\vspace{2pt}%
+  \noindent{\footnotesize\textit{Source~:~#1}%
+  \ifx&#2&\else\quad\href{#2}{\textcolor{uveyblue}{\fbox{\tiny\textbf{Voir la source}}}}\fi}%
+}
+
+%% ---
+\acrodef{IDP}{Internal Developer Platform}
+\acrodef{IaC}{Infrastructure as Code}
+\acrodef{CI/CD}{Continuous Integration / Continuous Deployment}
+\acrodef{AKS}{Azure Kubernetes Service}
+\acrodef{VNet}{Virtual Network}
+\acrodef{NSG}{Network Security Group}
+\acrodef{WAF}{Web Application Firewall}
+\acrodef{AGIC}{Application Gateway Ingress Controller}
+\acrodef{CNI}{Container Network Interface}
+\acrodef{GCS}{Google Cloud Storage}
+\acrodef{GCR}{Google Container Registry}
+\acrodef{GCP}{Google Cloud Platform}
+\acrodef{SLA}{Service Level Agreement}
+\acrodef{PFE}{Projet de Fin d'Études}
+\acrodef{PME}{Petites et Moyennes Entreprises}
+\acrodef{TPE}{Très Petites Entreprises}
+\acrodef{ETI}{Entreprises de Taille Intermédiaire}
+\acrodef{GED}{Gestion Électronique des Documents}
+\acrodef{SaaS}{Software as a Service}
+\acrodef{FinTech}{Financial Technology}
+\acrodef{RBAC}{Role-Based Access Control}
+\acrodef{API}{Application Programming Interface}
+\acrodef{CNCF}{Cloud Native Computing Foundation}
+\acrodef{DX}{Developer Experience}
+\acrodef{ILM}{Index Lifecycle Management}
+\acrodef{JVM}{Java Virtual Machine}
+\acrodef{MTTR}{Mean Time To Recovery}
+\acrodef{OCR}{Optical Character Recognition}
+\acrodef{SDK}{Software Development Kit}
+
+% ============================================================
+\begin{document}
+
+%% ---
+\input{pagePFE}
+
+%% ---
+\input{signatures}
+
+%% ---
+\pagenumbering{roman}
+
+\chapter*{Dédicaces}
+\input{Dedication}
+\newpage
+
+\chapter*{Remerciements}
+\input{Acknowledgment}
+\newpage
+
+\input{Abstract}        % <-- ajouter ici
+\newpage
+
+
+%% ---
+\tableofcontents
+\newpage
+
+%% ---
+\input{Acronyms}
+\newpage
+
+%% ---
+\listoffigures
+\addcontentsline{toc}{chapter}{Liste des Figures}
+\newpage
+
+%% ---
+\listoftables
+\addcontentsline{toc}{chapter}{Liste des Tableaux}
+\newpage
+
+%% ---
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\input{Introduction}
+
+\input{Chapter1}
+
+\input{Chapter2}
+
+\input{Chapter3}
+
+\input{Chapter4}
+
+\input{Chapter5}
+
+\input{Conclusion}
+
+%% ---
+\addcontentsline{toc}{chapter}{Bibliographie}
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+
+\end{document}

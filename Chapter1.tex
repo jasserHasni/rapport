@@ -1,0 +1,219 @@
+\chapter{Présentation Générale du Projet}
+\label{chap:intro}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+Ce premier chapitre pose les bases nécessaires au développement du projet de fin d'études effectué au sein de la société Uvey. Dans un premier temps, le contexte de la transformation numérique qui a rendu ce projet nécessaire est présenté. Dans un deuxième temps, la structure de la société, son domaine d'activité et son environnement sont décrits. Enfin, la problématique concrète identifiée, les objectifs qui s'en dégagent ainsi que les méthodes retenues pour y répondre sont exposés.
+
+
+\section{Contexte et Motivation du Projet}
+\label{sec:contexte}
+
+La digitalisation accrue de l'économie oblige les entreprises à faire appel à une infrastructure informatique de plus en plus complexe afin de rester concurrentielles et de répondre aux besoins de leurs clients. Au cours des dernières années, ce processus de digitalisation a pris un virage historique et transformé radicalement la façon dont les entreprises conçoivent et développent leurs systèmes. Dans ce contexte, le recours aux architectures monolithiques devient inadapté. Bien que ces monolithes aient été choisis en raison de leur simplicité de construction et de leur facilité d'exécution, ils n'ont jamais été en mesure de répondre à toutes les exigences que pose le monde du numérique.
+
+La montée de l'informatique en nuage et de l'architecture de type microservices constitue une rupture totale dans le domaine du développement logiciel. L'application monolithique, qui formait un ensemble unique géré par une seule équipe et déployé en intégralité, est aujourd'hui supplantée par l'architecture de type microservices, qui décompose cette application en de nombreux composants indépendants --- parfois au nombre de plusieurs centaines. Chaque service indépendant dispose de son propre cycle de vie, de son propre dépôt de code, de son propre pipeline de déploiement et de ses propres besoins en infrastructure. Cette évolution est représentée sur la Figure \ref{fig:evolution_archi}.
+
+L'avantage d'une telle approche est évident : possibilité de déploiements séparés, mise à l'échelle individuelle et isolation des pannes. Cependant, chaque avantage a un coût. L'autonomie de chaque composant entraîne une augmentation de la complexité d'orchestration que toutes les équipes impliquées doivent prendre en charge. Ce coût se manifeste par la gestion des relations entre différents services, les orchestrations complexes de déploiements multi-cluster, l'analyse des problèmes dans un environnement distribué, l'harmonisation des configurations sur plusieurs environnements, ainsi que la sécurisation des communications inter-services.
+
+C'est précisément dans ce contexte qu'intervient ce projet. Chez Uvey, la nécessité de simplifier l'expérience quotidienne des développeurs ainsi que d'assurer une observabilité proactive des systèmes distribués a conduit à envisager la création d'un \ac{IDP}. Ce dernier est défini par Gartner comme un niveau d'abstraction qui donne aux équipes produit la possibilité de développer et de déployer leurs applications de manière autonome et sécurisée, sur la base de bonnes pratiques d'infrastructure gérées de façon centralisée par une équipe plateforme. L'\ac{IDP} n'est donc pas seulement un outil : c'est également un levier organisationnel.
+
+À cela s'ajoute la transition de l'infrastructure vers Microsoft Azure, qui contribue à cet objectif : accès à des ressources cloud gérées modernes, meilleure gouvernance des coûts et scalabilité adaptée à la croissance d'Uvey.
+
+\vspace{0.4cm}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.85\textwidth]{fig_evolution_architectures}
+  \caption{Évolution des architectures logicielles vers les microservices cloud-natifs~\cite{newman2019monolith}}
+  \label{fig:evolution_archi}
+\end{figure}
+
+\section{Présentation de l'Organisme d'Accueil}
+\label{sec:organisme}
+
+Cette section présente la société Uvey dans laquelle le projet de fin d'études a été réalisé, en décrivant son activité, son positionnement sur le marché ainsi que sa structure organisationnelle.
+
+\subsection{Présentation générale}
+
+Ce projet de fin d'études a été réalisé au sein d'Uvey, une société tunisienne basée à Tunis, dont l'activité principale est l'édition d'une solution \ac{SaaS} destinée à la gestion comptable et financière. Dotée d'une vision bien précise --- rendre la comptabilité collaborative, simplifiée et entièrement dématérialisée ---, Uvey a mis au point une plateforme unique à destination des \ac{PME}, \ac{TPE}, \ac{ETI} et cabinets d'expertise comptable tunisiens, dont l'objectif est de moderniser leur gestion financière.
+
+Cette initiative s'inscrit dans une tendance générale de digitalisation rapide du tissu économique tunisien, encouragée aussi bien par la réglementation de la Banque Centrale de Tunisie que par la demande croissante des entreprises pour des outils de gestion modernes et accessibles via le cloud. C'est dans ce contexte de transformation qu'Uvey se positionne comme un acteur reconnu sur le marché, avec un produit conçu spécifiquement pour la région.
+
+La particularité d'Uvey réside dans le fait que son outil se situe précisément à la convergence de la technologie et de la comptabilité professionnelle. Il ne s'agit pas seulement de numériser les procédures existantes, mais surtout de les repenser, en offrant aux entreprises un accès collectif et en temps réel à leurs informations financières et comptables.
+
+La prise en compte du contexte réglementaire local --- notamment les exigences en matière de déclarations fiscales ou de comptabilité générale --- garantit à ses clients une utilisation optimale dès le premier jour.
+Le tableau \ref{tab:fiche_uvey} représente la fiche d'identité d'Uvey.
+
+\begin{table}[htbp]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{p{4cm} X}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Raison Sociale} & Uvey \\
+    \midrule
+    \textbf{Secteur} & \acf{FinTech} / \ac{SaaS} B2B \\
+    \midrule
+    \textbf{Siège Social} & Tunis, Tunisie \\
+    \midrule
+    \textbf{Produit Phare} & Plateforme de gestion comptable et financière \\
+    \midrule
+    \textbf{Cible} & \ac{PME}, \ac{TPE}, \ac{ETI} et cabinets d'expertise comptable \\
+    \midrule
+    \textbf{Architecture technique} & Cloud-native, microservices, multi-cloud \\
+    \midrule
+    \textbf{Langages utilisés} & Node.js, Go, Java (Spring Boot), Python, C\# \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Fiche d'identité de la société Uvey}
+  \label{tab:fiche_uvey}
+\end{table}
+
+\subsection{Organigramme d'Uvey}
+
+Tel que présenté dans l'organigramme ci-dessous (Figure~\ref{fig:organigramme}), Uvey est structurée autour de trois grandes directions : la Direction Technique \& Innovation, la Direction Commerciale \& Partenariats et la Direction Opérations \& Service Client, toutes coordonnées par une Direction Générale ayant pour mission de définir la stratégie et la vision globale de l'entreprise. Cette organisation permet une séparation claire des responsabilités tout en favorisant de fortes interactions entre les différentes lignes métiers.
+
+La Direction Technique \& Innovation est en charge du développement de la plateforme \ac{SaaS}, du pôle Intelligence Artificielle et \ac{GED} intelligente, ainsi que de l'ensemble de l'infrastructure et de la sécurité des données. Elle se doit d'assurer l'évolution technique des solutions proposées par Uvey, et plus particulièrement la mise en œuvre de solutions d'automatisation et d'intelligence artificielle au service de la productivité.
+
+La Direction Commerciale \& Partenariats a pour objectif de développer les relations commerciales avec les cabinets d'expertise comptable et les entreprises, tout en pilotant les équipes Marketing et Communication. Elle veille notamment au développement de la notoriété de la plateforme et à l'accompagnement des clients dans leur transformation digitale.
+
+La Direction Opérations \& Service Client est quant à elle chargée d'accompagner l'ensemble des utilisateurs à travers les services de support, d'assistance, de formation et de suivi client. Elle assure également le respect des exigences réglementaires et juridiques, notamment en matière de conformité aux normes tunisiennes.
+
+Cette organisation traduit la volonté d'Uvey de proposer une plateforme intégrée reposant sur une forte synergie entre l'innovation technologique, le développement commercial et l'excellence opérationnelle.
+
+\vspace{0.4cm}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{fig_organigramme_uvey}
+  \caption{Organigramme de la société Uvey}
+  \label{fig:organigramme}
+\end{figure}
+
+\section{Problématique}
+\label{sec:problematique}
+
+Le recours à des écosystèmes cloud complexes et à des architectures microservices n'est pas sans incidence sur les équipes d'ingénierie : il engendre un fardeau cognitif grandissant~\cite{forsgren2018accelerate} qui, faute de contrôle, risque de freiner la productivité au lieu de la favoriser. Si la migration vers ces architectures offre de nombreux avantages --- évolutivité, indépendance des déploiements ---, elle tend également à disperser les outils utilisés et les compétences requises au point de devenir contre-productive en l'absence d'une plateforme de coordination.
+
+Chez Uvey, cette problématique se manifeste sous plusieurs symptômes concrets (voir Figure \ref{fig:problematique}).
+
+\begin{itemize}[itemsep=0.2cm, topsep=0.3cm]
+  \item \textbf{Dispersion des outils :} les développeurs doivent naviguer entre de multiples interfaces distinctes --- portail Azure, interface ArgoCD, tableau de bord Grafana, index Kibana, interface GitLab --- pour accomplir une tâche de déploiement ou de diagnostic. Ce phénomène de \textit{context switching} imposé engendre une charge cognitive supplémentaire qui nuit à la concentration et allonge les délais de résolution des incidents.
+  \item \textbf{Absence de standardisation :} sans processus formalisés et outillés, chaque équipe adopte ses propres conventions de déploiement, générant des incohérences entre environnements et des difficultés de collaboration.
+  \item \textbf{Dérives de configuration :} la gestion manuelle des ressources cloud expose l'organisation à des configurations non documentées et non contrôlées, pouvant conduire à des comportements inattendus en production.
+  \item \textbf{Visibilité insuffisante :} l'absence d'une vue unifiée sur l'état des services allonge considérablement le MTTR (Mean Time To Recovery) lors des incidents de production, impactant directement la qualité de service offerte aux clients d'Uvey.
+  \item \textbf{Dépendance aux équipes infrastructure :} la création d'environnements de test nécessite l'intervention manuelle de l'équipe infrastructure, introduisant des délais incompatibles avec les rythmes de livraison agile.
+\end{itemize}
+
+Chacun de ces problèmes pris isolément pourrait paraître mineur. C'est leur combinaison qui révèle l'ampleur du phénomène, lequel est coûteux, source de frustration pour les équipes et constitue une menace pour la qualité des services d'Uvey.
+
+Une estimation interne basée sur les journaux GitLab et les rapports d'incidents des deux derniers mois précédant le démarrage du projet a permis de quantifier ce phénomène. Un développeur perdait en moyenne entre 35 et 40 minutes pour le suivi et le contrôle des déploiements en production, dont une grande partie était consacrée à la corrélation manuelle entre cinq systèmes distincts. La résolution d'un incident en production coûtait quant à elle environ 45 minutes de diagnostic, la majorité de ce temps étant dédiée à la corrélation manuelle de logs, métriques et événements de déploiement issus de sources hétérogènes. Le provisionnement d'un environnement de test nécessitait par ailleurs 30 minutes de travail manuel côté infrastructure, auxquelles s'ajoutaient plusieurs heures d'attente en période chargée.
+
+Dans une équipe de dix développeurs, ces pertes représentaient plusieurs dizaines d'heures chaque semaine.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.88\textwidth]{fig_problematique}
+  \caption{Dispersion des outils vs. Centralisation par l'IDP~\cite{noda2023devex}}
+  \label{fig:problematique}
+\end{figure}
+
+\section{Objectifs du Projet}
+\label{sec:objectifs}
+
+Afin de relever ce défi, le projet s'est organisé selon deux dimensions complémentaires : d'une part, des objectifs techniques orientés vers la réalisation d'une plateforme cloud robuste et automatisée ; d'autre part, des objectifs fonctionnels directement liés à l'expérience quotidienne des développeurs. Ces deux dimensions sont indissociables : leur satisfaction simultanée constitue la condition sine qua non pour atteindre l'objectif final du projet, à savoir donner à Uvey les moyens de faire évoluer son ingénierie sans sacrifier la qualité de ses services.
+
+\subsection{Objectifs Techniques}
+
+\begin{itemize}[itemsep=0.2cm, topsep=0.3cm]
+  \item Déployer et gérer l'infrastructure cloud via \texttt{Terraform}~\cite{hashicorp2023terraform} sur Microsoft Azure, en provisionnant trois clusters \ac{AKS} distincts (applicatif, automatisation, CI/CD) avec une architecture réseau sécurisée basée sur un \ac{VNet} segmenté.
+  \item Implémenter une approche \textbf{GitOps} pour le \ac{CI/CD} avec \texttt{ArgoCD}~\cite{argocd2023docs}, garantissant des déploiements traçables, reproductibles et réversibles via des manifestes versionnés dans Git.
+  \item Mettre en place une pile complète d'observabilité couvrant les trois piliers fondamentaux : collecte et analyse des logs via la stack ELK, supervision des métriques via Prometheus et Grafana, et traçage distribué via OpenTelemetry.
+  \item Sécuriser l'ensemble des communications inter-services selon le principe \textbf{Zero-Trust}~\cite{nist2020zerotrust} en utilisant des \textit{Managed Identities} Azure Active Directory, éliminant toute dépendance aux secrets statiques.
+  \item Migrer la base de données PostgreSQL depuis \ac{GCP} vers Azure sans interruption de service et sans perte de données, en garantissant le chiffrement de bout en bout des données en transit et au repos.
+\end{itemize}
+
+\subsection{Objectifs Fonctionnels}
+
+\begin{itemize}[itemsep=0.2cm, topsep=0.3cm]
+  \item Développer un portail centralisé (\ac{IDP}) basé sur \texttt{Backstage}~\cite{backstage2023docs}, offrant aux développeurs une interface unifiée pour accéder à l'ensemble des outils, services et informations nécessaires à leur travail quotidien.
+  \item Offrir un catalogue logiciel unifié (\textit{Software Catalog}) répertoriant tous les microservices déployés, avec leurs dépendances, leurs propriétaires, leur statut de déploiement en temps réel et leur documentation technique.
+  \item Permettre aux développeurs de provisionner et de gérer leurs environnements de test de manière entièrement autonome (\textit{self-service}), sans dépendre des équipes infrastructure.
+  \item Intégrer l'ensemble des outils d'observabilité (Grafana, Kibana, OpenTelemetry) dans l'\ac{IDP} avec des liens pré-filtrés par service, réduisant drastiquement le temps de diagnostic lors des incidents.
+\end{itemize}
+
+\section{Méthodologies Adoptées}
+\label{sec:methodologies}
+
+La conduite d'un projet situé à la croisée du développement logiciel, du cloud computing et de la transformation des pratiques d'ingénierie nécessite le recours à des méthodes efficaces, capables de neutraliser les incertitudes inhérentes à l'innovation. C'est pourquoi deux approches complémentaires ont été adoptées tout au long du projet.
+
+\subsection{Méthode Agile Scrum}
+
+Le développement de la plateforme \ac{IDP} et le management de l'infrastructure ont été conduits selon la méthode Scrum Agile~\cite{schwaber2020scrum}, organisée en cycles itératifs de deux semaines appelés \textit{Sprints}. Chaque sprint est structuré autour de quatre cérémonies : le \textit{Sprint Planning}, lors duquel l'objectif et le périmètre de l'itération sont définis ; le \textit{Daily stand-up}, qui assure la coordination quotidienne de l'équipe ; la \textit{Sprint Review}, qui consiste en une présentation des réalisations aux parties prenantes ; et la \textit{Sprint Retrospective}, qui vise à améliorer le processus de travail.
+
+Le recours à cette approche a été motivé par une comparaison préliminaire des différentes méthodes de gestion de projet disponibles, présentée dans le tableau~\ref{tab:methodo_comparaison}.
+
+\begin{table}[htbp]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{3cm} L{3.5cm} L{3.5cm} L{3.5cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{Scrum} & \textbf{Kanban} & \textbf{Cycle en V} \\
+    \midrule
+    Adaptabilité      & Élevée (sprints) & Élevée (flux continu) & Faible (figé) \\
+    Livraisons        & Incrémentales (2 sem.) & Continue & Unique (fin de projet) \\
+    Feedback client   & À chaque sprint & Continu & En fin de projet \\
+    Planification     & Backlog priorisé & Flux de tâches & Jalons figés en amont \\
+    Convient pour     & Projets évolutifs & Maintenance & Projets bien définis \\
+    Visibilité        & Backlog + burndown & Tableau Kanban & Jalons figés \\
+    \textbf{Choix}    & \textbf{Retenu} & Non retenu & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison des méthodologies de gestion de projet}
+  \label{tab:methodo_comparaison}
+\end{table}
+
+Scrum s'impose comme le choix le plus adapté dans ce contexte pour une raison fondamentale : la nature évolutive du projet a rendu nécessaire une adaptation continue du périmètre à chaque itération. Kanban, bien qu'efficace pour l'exploitation d'un système existant, ne convient pas à un projet de cette envergure qui nécessite une structure itérative pour sa planification. Quant au Cycle en V, il suppose que le besoin soit entièrement défini en amont, ce qui va à l'encontre de la démarche de recherche technologique adoptée ici. Une démonstration formelle de chaque sprint a été réalisée auprès de l'encadrant industriel Uvey.
+La Figure \ref{fig:scrum} représente le cycle de développement Scrum appliquée au projet.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{fig_scrum}
+  \caption{Cycle de développement Scrum appliqué au projet~\cite{schwaber2020scrum}}
+  \label{fig:scrum}
+\end{figure}
+
+\subsection{Approche GitOps}
+
+La gestion de l'infrastructure cloud et le déploiement des applications sont réalisés selon le paradigme GitOps~\cite{weaveworks2021gitops}. La logique sous-jacente est simple mais puissante : Git devient l'unique source de vérité concernant l'état attendu du système. Tout changement --- qu'il porte sur l'infrastructure ou sur la configuration applicative --- passe obligatoirement par une \textit{pull request} revue avant fusion. Plusieurs approches de déploiement ont été évaluées ; c'est GitOps qui a finalement été retenu au regard des critères de sécurité et de traçabilité du projet, comme le montre le tableau~\ref{tab:gitops_comparaison}.
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{3.5cm} L{3.5cm} L{3.5cm} L{3cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{GitOps (ArgoCD)} & \textbf{CI/CD push classique} & \textbf{Scripts manuels} \\
+    \midrule
+    Traçabilité       & Complète (Git history) & Partielle (logs CI) & Inexistante \\
+    Rollback          & \texttt{git revert} immédiat & Rebuild du pipeline & Manuel, risqué \\
+    Sécurité cluster  & Aucun accès externe requis & Accès direct cluster & Accès direct cluster \\
+    Dérive config.    & Détectée et corrigée auto. & Non détectée & Non détectée \\
+    Auditabilité      & Totale & Partielle & Nulle \\
+    Réconciliation    & Continue et automatique & À chaque pipeline & Inexistante \\
+    \textbf{Choix}    & \textbf{Retenu} & Non retenu & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison des approches de déploiement d'infrastructure}
+  \label{tab:gitops_comparaison}
+\end{table}
+
+GitOps a été retenu pour trois raisons fondamentales. Premièrement, sa traçabilité complète : chaque modification de l'infrastructure est associée à un commit Git portant un auteur, un message explicatif et un horodatage précis, constituant un journal d'audit immuable. Deuxièmement, sa sécurité renforcée : les clusters de production n'exposent aucune API d'administration accessible depuis les pipelines \ac{CI/CD} externes, réduisant drastiquement la surface d'attaque. Troisièmement, sa capacité de réconciliation continue : ArgoCD détecte automatiquement toute dérive entre l'état déclaré dans Git et l'état réel des clusters, et la corrige sans intervention humaine.
+
+%\vspace{3cm}
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Ce premier chapitre a posé les bases du projet. Le contexte de la révolution numérique et les spécificités de l'architecture microservices ont été exposés, aboutissant à une présentation détaillée d'Uvey, son positionnement innovant dans le domaine de la FinTech tunisienne et sa stratégie de fonctionnement. La problématique de dispersion des outils et de charge cognitive pesant sur les équipes a été établie sur la base d'observations pratiques et de données quantifiées. Enfin, Scrum et GitOps ont été retenus comme méthodologies après des évaluations rigoureuses et adaptées au contexte du projet.
+
+Le chapitre suivant aborde la conception et la mise en œuvre de l'\ac{IDP}, cœur technique du présent travail.

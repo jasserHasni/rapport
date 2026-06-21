@@ -1,0 +1,270 @@
+\chapter{Déploiement et Gestion des Applications}
+\label{chap:deploiement}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+\noindent Ce chapitre décrit en détail la stratégie de déploiement mise en œuvre chez Uvey.
+La stratégie complète repose sur l'automatisation via des pipelines \textbf{GitLab \ac{CI/CD}}
+et la réconciliation continue avec \textbf{ArgoCD} suivant le paradigme \textbf{GitOps}.
+L'adoption d'une telle stratégie implique un changement majeur dans les pratiques de
+livraison logicielle au sein de l'organisation : là où les déploiements étaient auparavant
+des opérations manuelles, occasionnelles et sujettes aux erreurs, ils deviennent des
+opérations entièrement automatisées, fréquentes et traçables.
+
+\medskip
+
+\noindent Ce chapitre commence par décrire la conception du pipeline \textbf{\ac{CI/CD}}, la
+stratégie \textbf{GitOps} ainsi que l'utilisation des \textbf{Helm Charts} dans ArgoCD.
+Il décrit ensuite l'intégration du flux de déploiement au sein de l'\ac{IDP}, puis
+présente un scénario de diagnostic d'incidents afin de mettre en évidence les bénéfices
+opérationnels de la plateforme. Enfin, les métriques de performance avant et après la
+mise en œuvre du projet sont présentées.
+
+\section{Gestion des déploiements avec ArgoCD}
+\label{sec:argocd}
+
+\noindent \tech{ArgoCD}~\cite{argocd2023docs} est utilisé pour les processus de livraison continue dans le cadre du paradigme GitOps, et s'exécute dans le cluster d'automatisation. Il constitue le cœur opérationnel de la déclaration des ressources Kubernetes, en assurant en temps réel la cohérence entre l'état défini dans les dépôts Git et les ressources Kubernetes déployées dans les trois clusters \ac{AKS}. À la différence des pipelines \ac{CI/CD} classiques, dans lesquels le processus déclenche activement l'application des changements au cluster, ArgoCD fonctionne selon un modèle \textit{pull} : il surveille en permanence l'état des ressources Kubernetes et les met à jour dès que l'état observé diverge de l'état déclaré. Sur le plan de la sécurité, cette approche présente l'avantage majeur d'éliminer tout accès direct aux \ac{API} des clusters de production depuis les pipelines \ac{CI/CD} externes. Toute tentative de modification manuelle d'une ressource Kubernetes est détectée et corrigée conformément à la stratégie de synchronisation définie. La Figure~\ref{fig:argocd_architecture} illustre cette architecture GitOps, en faisant apparaître le modèle \textit{pull} d'ArgoCD, les flux de synchronisation entre le dépôt Git et les trois clusters \ac{AKS}, ainsi que l'isolation complète des pipelines vis-à-vis des \ac{API} des clusters de production.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_argocd_architecture}
+  \caption{Architecture GitOps avec ArgoCD --- synchronisation AKS~\cite{argocd2023docs}}
+  \label{fig:argocd_architecture}
+\end{figure}
+
+La Figure~\ref{fig:argocd_ui} présente l'interface ArgoCD telle qu'elle apparaît en production chez Uvey, exposant pour chaque application son statut de synchronisation (\textit{Synced} / \textit{OutOfSync}), son état de santé (\textit{Healthy} / \textit{Degraded}) et le dernier commit Git appliqué.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_argocd_ui}
+  \caption{Interface ArgoCD --- statuts de synchronisation des applications~\cite{argocd2023docs}}
+  \label{fig:argocd_ui}
+\end{figure}
+
+\section{Migration de la base de données PostgreSQL}
+\label{sec:migration_db}
+
+\noindent La base de données source, hébergée sur \ac{GCP}, a été transférée vers une instance Azure Database for PostgreSQL Flexible Server~\cite{azure2023postgres}. Le choix du \textit{Flexible Server} plutôt que du \textit{Single Server} s'est imposé pour plusieurs raisons : la flexibilité de paramétrage (configuration PostgreSQL entièrement personnalisable), la planification de la fenêtre de maintenance, et la possibilité d'une haute disponibilité avec un réplica de sauvegarde dans une zone de disponibilité distincte, comme le montre le tableau~\ref{tab:postgres_comparaison}.
+
+\vspace{0.4cm}
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{4.5cm} L{4.5cm} L{4.5cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{Flexible Server} & \textbf{Single Server} \\
+    \midrule
+    Paramètres PostgreSQL  & Entièrement personnalisables & Limités \\
+    Haute disponibilité    & Réplica en zone distincte (ZRS) & Réplica dans la même zone \\
+    Fenêtre de maintenance & Planifiable par l'utilisateur & Imposée par Azure \\
+    Intégration VNet       & Native (Private Endpoint) & Via règles de pare-feu \\
+    Versions PG supportées & 11, 12, 13, 14, 15, 16 & 9.5 à 11 uniquement \\
+    Statut produit         & Actif (recommandé par Azure) & Déprécié (retrait 2025) \\
+    \textbf{Choix}         & \textbf{Retenu} & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison Azure PostgreSQL Flexible Server vs Single Server}
+  \label{tab:postgres_comparaison}
+\end{table}
+
+\noindent La migration a été réalisée de manière sécurisée et entièrement automatisée selon les étapes suivantes :
+
+\begin{itemize}
+    \item Export de la base de données source à l'aide de \texttt{pg\_dump} avec compression parallèle afin de réduire le volume des données transférées ;
+
+    \item Transfert du fichier d'export vers un bucket \acf{GCS} bénéficiant d'un chiffrement au repos basé sur l'algorithme AES-256 ;
+
+    \item Provisionnement automatique d'un bastion temporaire sur Azure via Terraform, jouant le rôle de passerelle sécurisée entre les environnements \ac{GCP} et Azure ;
+
+    \item Restauration de la base de données dans Azure PostgreSQL Flexible Server via \texttt{pg\_restore} en mode parallèle (\texttt{-j 4}), permettant l'exécution simultanée de plusieurs tâches de restauration et réduisant significativement la durée de l'opération ;
+
+    \item Validation de l'intégrité des données restaurées par comparaison des checksums et des statistiques entre la base source et la base cible ;
+
+    \item Suppression automatique du bastion temporaire après validation, afin de minimiser la surface d'exposition de l'infrastructure.
+\end{itemize}
+
+\noindent Tout au long du processus, la sécurité des données a été préservée grâce au maintien du chiffrement en transit via TLS 1.3 et au chiffrement au repos via AES-256. Les données n'ont à aucun moment transité sur Internet sous une forme non chiffrée, garantissant ainsi la confidentialité et l'intégrité des informations durant toute l'opération de migration. La Figure~\ref{fig:migration_db} représente l'enchaînement complet des étapes de migration, depuis l'export \texttt{pg\_dump} sur \ac{GCP} jusqu'à la restauration sur Azure Flexible Server via le bastion temporaire, en indiquant pour chaque étape le mécanisme de chiffrement en vigueur.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_migration_db}
+  \caption{Processus de migration PostgreSQL de \ac{GCP} vers Azure~\cite{azure2023postgres}}
+  \label{fig:migration_db}
+\end{figure}
+
+
+\section{Stratégie de déploiement et pipeline CI/CD}
+\label{sec:pipeline_cicd}
+
+\noindent Cette section présente la stratégie de déploiement adoptée, en distinguant l'environnement de développement, où la rapidité de feedback est prioritaire, de l'environnement de production, où la fiabilité et la traçabilité sont essentielles.
+
+\subsection{Environnement de développement}
+
+La gestion automatisée des déploiements est devenue l'élément central du processus de développement~\cite{forsgren2018accelerate}. Les pipelines d'\acf{CI/CD} s'exécutent sur l'infrastructure GitLab d'Uvey et couvrent l'intégralité du cycle de vie du microservice : compilation du code source, exécution des tests unitaires et d'intégration, contrôle de la qualité du code par analyse statique, construction de l'image Docker, publication au registre de conteneurs, et déclenchement de l'automatisme de déploiement via le flux GitOps. Chaque étape du pipeline est atomique et produit un rapport d'exécution garantissant une traçabilité complète. La Figure~\ref{fig:cicd_pipeline} présente le pipeline \ac{CI/CD} complet, en déroulant chacune de ces étapes depuis le commit initial jusqu'au déploiement en production, et en faisant apparaître les points de contrôle qualité et les artefacts produits à chaque stage.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_cicd_pipeline}
+  \caption{Pipeline \ac{CI/CD} complet --- du commit au déploiement en production~\cite{argocd2023docs}}
+  \label{fig:cicd_pipeline}
+\end{figure}
+
+À chaque push sur la branche \texttt{main}, le pipeline crée une image Docker identifiée par le SHA du commit et la déploie dans l'environnement de développement, qui utilise \tech{Docker Compose}~\cite{docker2023compose}. Cet environnement est composé de plusieurs conteneurs issus de la même image. Il fournit au développeur un cycle de feedback rapide, avec des temps de déploiement inférieurs à deux minutes. L'utilisation du SHA du commit comme étiquette garantit l'immuabilité et l'unicité de chaque build.
+
+\subsection{Environnement de production}
+
+Pour le passage en production, la mise en œuvre suit le modèle GitOps : l'image Docker est étiquetée avec un tag immuable basé sur le SHA du commit, publiée sur le \acf{GCR}, puis le pipeline met à jour automatiquement le manifeste Kubernetes dans le dépôt de configuration. ArgoCD détecte alors les modifications et resynchronise automatiquement le cluster \ac{AKS} via une mise à jour en \textit{rolling update}, sans interruption de service.
+
+Le mécanisme de \textit{rolling update} garantit qu'à aucun moment l'ensemble des réplicas d'un déploiement ne sont arrêtés simultanément : les nouveaux pods sont démarrés et validés par les \textit{readiness probes} avant que les anciens ne soient arrêtés. Ainsi, aucune interruption de service n'est perceptible par les utilisateurs d'Uvey lors du déploiement. En cas d'anomalie détectée par les readiness probes, ArgoCD effectue automatiquement un rollback vers la version précédente du déploiement. La Figure~\ref{fig:gitops_pipeline} illustre l'étape de mise à jour automatique du manifeste GitOps au sein du pipeline, montrant comment le tag d'image issu du build est injecté dans le fichier \texttt{deployment.yaml} du dépôt de configurations avant d'être poussé par le pipeline.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{fig_gitops_pipeline}
+  \caption{Mise à jour automatique du manifeste GitOps --- extrait \ac{CI/CD}~\cite{weaveworks2021gitops}}
+  \label{fig:gitops_pipeline}
+\end{figure}
+
+\section{Approche GitOps avec ArgoCD et gestion des Helm Charts}
+\label{sec:gitops_argocd}
+
+\noindent Cette section détaille le fonctionnement du paradigme GitOps tel qu'il est mis en œuvre avec ArgoCD, ainsi que la gestion des Helm Charts dans ce contexte.
+
+\subsection{Réconciliation continue avec ArgoCD}
+
+\noindent Avant de retenir GitOps comme paradigme central, plusieurs approches de gestion des déploiements ont été évaluées au regard des exigences de traçabilité, de sécurité et d'auditabilité du projet, comme le résume le tableau~\ref{tab:deploy_comparaison}.
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{3.5cm} L{3.5cm} L{3.5cm} L{3cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{GitOps (ArgoCD)} & \textbf{\ac{CI/CD} push classique} & \textbf{Scripts manuels} \\
+    \midrule
+    Traçabilité       & Complète (Git history) & Partielle (logs CI) & Inexistante \\
+    Rollback          & \texttt{git revert} immédiat & Rebuild du pipeline & Manuel, risqué \\
+    Accès cluster     & Aucun accès externe requis & Accès direct cluster & Accès direct cluster \\
+    Dérive config.    & Détectée et corrigée auto. & Non détectée & Non détectée \\
+    Auditabilité      & Totale & Partielle & Nulle \\
+    Réconciliation    & Continue et automatique & À chaque pipeline & Inexistante \\
+    \textbf{Choix}    & \textbf{Retenu} & Non retenu & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison des approches de déploiement et gestion de configuration}
+  \label{tab:deploy_comparaison}
+\end{table}
+
+\noindent L'approche \textbf{GitOps}~\cite{weaveworks2021gitops} repose sur le postulat que le dépôt Git constitue l'unique et immuable source de vérité concernant l'état souhaité du système. En pratique, les pipelines se contentent de pousser des commits dans Git, tandis qu'ArgoCD, exécuté depuis le cluster lui-même, se charge de réconcilier l'état effectif avec l'état déclaré. Cette inversion des rôles entre pipelines et clusters offre plusieurs avantages significatifs : \textbf{traçabilité complète} de chaque modification via le commit Git horodaté et signé, \textbf{rollback} simplifié par une commande \texttt{git revert}, \textbf{sécurité renforcée} puisque les pipelines n'ont jamais besoin d'un accès direct au cluster de production, et \textbf{auditabilité} totale. En cas de divergence --- par exemple, si un opérateur modifie manuellement une ressource dans le cluster --- celle-ci est aussitôt détectée et corrigée conformément à la stratégie de synchronisation définie, garantissant que l'état effectif reste en permanence aligné sur l'état déclaré dans Git. La Figure~\ref{fig:gitops_reconciliation} représente ce modèle de réconciliation continue, en illustrant la boucle de contrôle par laquelle ArgoCD compare périodiquement l'état observé dans le cluster à l'état déclaré dans Git et déclenche une resynchronisation dès qu'une divergence est détectée.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_gitops_reconciliation}
+  \caption{Modèle de réconciliation GitOps avec ArgoCD~\cite{argocd2023docs}}
+  \label{fig:gitops_reconciliation}
+\end{figure}
+
+\subsection{Gestion des Helm Charts}
+
+\noindent La gestion des charts Helm~\cite{helm2023docs} via ArgoCD permet de résoudre le problème de dérive de configuration, en soumettant chaque chart au mécanisme de réconciliation GitOps. Avant l'adoption d'ArgoCD, les mises à jour des charts Helm s'effectuaient manuellement via la commande \texttt{helm upgrade}, ce qui engendrait des dérives de configuration non détectées, empêchait tout rollback fiable et créait un risque de désynchronisation entre les valeurs réellement appliquées sur le cluster et celles présentes dans le dépôt Git. ArgoCD surveille en permanence les dépôts Git où sont stockées les valeurs de configuration des charts et identifie automatiquement toute divergence entre l'état déclaratif et l'état observé. Les applications ArgoCD encapsulent chaque chart Helm avec ses propres valeurs de configuration, simplifiant ainsi la gestion de composants complexes tels que la stack de monitoring ou le gestionnaire de secrets. La Figure~\ref{fig:helm_argocd} illustre comment une application ArgoCD encapsule un chart Helm avec son fichier de valeurs dédié, permettant à ArgoCD de détecter toute divergence entre les valeurs déclarées dans Git et celles effectivement appliquées sur le cluster.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{fig_helm_argocd}
+  \caption{Gestion des Helm Charts via les Applications ArgoCD~\cite{argocd2023docs}}
+  \label{fig:helm_argocd}
+\end{figure}
+
+La Figure~\ref{fig:argocd_sync_policy} présente la politique de synchronisation configurée pour la stack de monitoring, détaillant les options \textit{selfHeal} et \textit{automated} qui assurent la correction automatique de toute dérive sans intervention manuelle.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{fig_argocd_sync_policy}
+  \caption{Politique de synchronisation ArgoCD pour la stack de monitoring~\cite{argocd2023docs}}
+  \label{fig:argocd_sync_policy}
+\end{figure}
+
+\section{Scénario de déploiement de bout en bout}
+\label{sec:use_case_deploy}
+
+\noindent Ce scénario illustre le flux complet de déploiement d'une mise à jour du microservice \texttt{api-accounting} de la version \texttt{v2.3.1} vers la version \texttt{v2.4.0}. Ce cas d'usage est représentatif de la grande majorité des opérations de mise en production quotidiennes chez Uvey, et illustre concrètement comment les différentes briques technologiques --- GitLab \ac{CI/CD}, Docker, ArgoCD, \ac{AKS} et l'\ac{IDP} --- s'articulent en un flux cohérent, traçable et réversible :
+
+\begin{enumerate}
+  \item Le développeur pousse ses modifications sur la branche \texttt{main} du dépôt \texttt{api-accounting}.
+  \item Le pipeline GitLab \ac{CI/CD} se déclenche automatiquement : build, tests unitaires, tests d'intégration.
+  \item En cas de succès, l'image Docker \texttt{gcr.io/uvey/api-accounting:v2.4.0} est publiée sur \ac{GCR}.
+  \item Le pipeline met à jour le manifeste \texttt{deployment.yaml} dans le dépôt de configurations.
+  \item ArgoCD détecte la modification dans Git et synchronise automatiquement le cluster \ac{AKS}.
+  \item Le déploiement en \textit{rolling update} est effectué sans interruption de service.
+  \item Le développeur visualise le statut du déploiement depuis l'\ac{IDP} en temps réel.
+\end{enumerate}
+
+\noindent En cas d'échec à l'une des étapes, le flux est interrompu immédiatement et une alerte est envoyée à l'équipe via le canal de communication dédié. La correction de l'anomalie et le redémarrage du pipeline suffisent à reprendre le cours des opérations sans intervention manuelle sur le cluster. En cas de problème constaté après le déploiement, un \texttt{git revert} sur le dépôt de configurations suffit à déclencher un rollback automatique par ArgoCD. La Figure~\ref{fig:gitlab_pipeline} présente le résultat d'un tel déploiement réussi dans l'interface GitLab, avec l'ensemble des stages du pipeline au vert et le tag \texttt{v2.4.0} correctement publié sur le registre de conteneurs.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_gitlab_pipeline_success}
+  \caption{Déploiement réussi de \texttt{api-accounting} v2.4.0~\cite{argocd2023docs}}
+  \label{fig:gitlab_pipeline}
+\end{figure}
+
+\section{Intégration des déploiements dans l'IDP}
+\label{sec:deploy_idp}
+
+\noindent L'intégration du flux de déploiement dans l'\ac{IDP} est la conclusion naturelle de l'approche de centralisation. Sans cette intégration, les développeurs devraient naviguer entre plusieurs interfaces --- GitLab pour le pipeline, ArgoCD pour suivre l'état du déploiement, Grafana pour analyser la santé des services --- pour disposer d'une vision d'ensemble de leur microservice. L'\ac{IDP} centralise toutes ces informations dans une vue par service unique. Dans le \textit{Software Catalog}, chaque microservice est enrichi de liens directs vers ses pipelines courants ou récents sur GitLab, de son état de synchronisation ArgoCD avec un aperçu des ressources déployées, et des métriques de santé issues de Prometheus. Ces liens sont créés automatiquement à partir des données déclaratives du fichier \texttt{catalog-info.yaml} de chaque service : le simple ajout d'un service au catalogue suffit à lui attribuer l'ensemble de ces intégrations. La Figure~\ref{fig:idp_service_detail} présente la vue détaillée d'un microservice dans l'\ac{IDP}, faisant apparaître en un seul écran son statut ArgoCD, ses pipelines GitLab récents, ses métriques Prometheus et ses liens pré-filtrés vers Grafana et Kibana.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_idp_service_detail}
+  \caption{Vue détaillée d'un microservice dans l'\ac{IDP} avec ses liens profonds~\cite{backstage2023catalog}}
+  \label{fig:idp_service_detail}
+\end{figure}
+
+\section{Scénario de diagnostic d'incident}
+\label{sec:use_case_monitoring}
+
+\noindent Ce scénario illustre le diagnostic d'un incident de performance sur le service \texttt{api-llm-ocr}, détecté via les alertes Grafana~\cite{prometheus2023docs}. Il met en évidence la manière dont l'\ac{IDP} permet au développeur de passer de l'alerte à la correction sans quitter une interface centralisée, et sans avoir à connaître par cœur les URLs de chaque outil d'observabilité ou les filtres à appliquer pour isoler les données du service concerné :
+
+\begin{enumerate}
+  \item Grafana déclenche une alerte : la latence P95 du service \texttt{api-llm-ocr} dépasse 3 secondes.
+  \item Le développeur reçoit une notification et accède directement à l'\ac{IDP}.
+  \item Depuis la page du service dans le \textit{Software Catalog}, il clique sur le lien Grafana pré-filtré.
+  \item Il identifie une corrélation entre la montée de latence et un \textit{OOMKill} sur un pod.
+  \item Il consulte les logs Kibana via le lien pré-filtré pour confirmer l'erreur mémoire.
+  \item Il ajuste les \textit{resource limits} dans le manifeste Git ; ArgoCD déploie automatiquement la correction.
+\end{enumerate}
+
+\noindent Sans l'\ac{IDP}, ce même diagnostic aurait nécessité d'ouvrir successivement Grafana, Kibana et l'interface ArgoCD, d'appliquer manuellement les filtres appropriés sur chaque outil, et de corréler des informations issues de sources hétérogènes. Le gain de temps sur ce type d'opération, répété plusieurs fois par semaine à l'échelle de l'ensemble des équipes, représente un bénéfice opérationnel significatif et mesurable.
+
+\section{Métriques de performance}
+\label{sec:resultats}
+
+\noindent Les améliorations constatées à l'issue de la mise en œuvre de l'\ac{IDP} et de l'infrastructure Azure sont synthétisées dans le tableau~\ref{tab:resultats}. Ces indicateurs ont été obtenus sur une période représentative, avant et après la mise en production de la solution, à partir des données issues des pipelines GitLab, des logs ArgoCD et des tableaux de bord Grafana. Ils permettent de vérifier quantitativement les gains évoqués lors de l'analyse de la problématique : amélioration de la vitesse de provisionnement des environnements de test, réduction du temps de déploiement en production et diminution du \ac{MTTR}.
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.4}
+  \begin{tabularx}{\textwidth}{L{6cm} C{3.5cm} C{3.5cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Métrique} & \textbf{Avant} & \textbf{Après} \\
+    \midrule
+    Temps de création d'un environnement de test & $\sim$30 min (manuel) & $\sim$5 min (self-service) \\
+    Temps de déploiement en production & $\sim$20 min & $\sim$8 min \\
+    Nombre d'outils pour un diagnostic & 4--5 outils & 1 interface (\ac{IDP}) \\
+    Temps moyen de résolution d'incident (\ac{MTTR}) & $\sim$45 min & $\sim$20 min \\
+    Dérives de configuration & Non contrôlées (manuel) & Automatique (ArgoCD) \\
+    Traçabilité des déploiements & Partielle & Complète (Git log) \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Métriques d'amélioration --- avant et après le projet~\cite{dora2023}}
+  \label{tab:resultats}
+\end{table}
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Ce chapitre a détaillé la stratégie de déploiement adoptée par Uvey. Les pipelines GitLab \ac{CI/CD} couvrent l'intégralité du cycle de vie de chaque microservice, depuis la compilation du code source jusqu'à la construction et la publication de l'image Docker. L'approche GitOps avec ArgoCD garantit des déploiements 100\% traçables, réversibles et sans interruption de service via le \textit{rolling update}. Elle permet également d'éliminer les risques liés à un accès direct aux clusters depuis les pipelines. La gestion des Helm Charts via ArgoCD prévient les dérives de configuration causées par des déploiements manuels. L'intégration de l'ensemble de ces flux au sein de l'\ac{IDP} consolide l'expérience développeur et élimine le besoin de naviguer entre plusieurs outils. 
+
+\textbf{Le chapitre suivant présente le déploiement de la pile d'observabilité.}

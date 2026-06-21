@@ -1,0 +1,182 @@
+\chapter{Mise en place de l'Internal Developer Platform}
+\label{chap:idp}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+Le présent chapitre porte sur la conception et la mise en œuvre de l'\ac{IDP} au sein de l'architecture d'Uvey. Après une justification du choix de Backstage par une comparaison des différentes solutions disponibles sur le marché, les composants qui constituent l'\ac{IDP} sont détaillés : le \textit{Software Catalog} pour la centralisation des services, le proxy Node.js pour une intégration sécurisée avec les services Azure, l'accès unifié à tous les outils d'observabilité, et enfin le provisionnement autonome des environnements éphémères.
+
+\section{Présentation de la plateforme}
+\label{sec:idp_presentation}
+
+L'\ac{IDP} constitue le point central de la stratégie mise en place pour améliorer l'expérience développeur et faciliter la gestion de l'infrastructure. Dans un environnement où les ingénieurs travaillent quotidiennement avec de nombreux outils --- portails cloud, outils de déploiement, plateformes de surveillance, wikis, registres de conteneurs --- une plateforme unifiée représente un levier de productivité considérable. Plutôt que de multiplier les interfaces, l'\ac{IDP} joue le rôle d'un agrégateur intelligent, qui présente à l'utilisateur les informations pertinentes dans le bon contexte.
+
+Dans le cadre de ce projet, le choix s'est porté sur \textbf{Backstage}~\cite{backstage2023docs}, un framework open-source développé par \textbf{Spotify} en 2020 pour répondre aux besoins de gestion interne de son architecture microservices. Ce framework se caractérise par sa modularité, fondée sur une architecture de plugins qui lui permet de fédérer dans une interface unique l'ensemble des outils et services d'une organisation. Il repose sur trois éléments principaux : un catalogue de services (\textit{Software Catalog}), qui regroupe sous un même toit tous les microservices, \ac{API} et autres ressources ; un système de templates facilitant la création de projets selon des \textit{Golden Paths} récapitulant les bonnes pratiques de l'organisation ; et une documentation technique intégrée via TechDocs. La Figure~\ref{fig:backstage_home} présente la page d'accueil de l'\ac{IDP} telle qu'elle a été déployée chez Uvey, mettant en évidence la navigation unifiée vers le \textit{Software Catalog}, les outils d'observabilité et les templates de provisionnement, le tout accessible depuis une interface unique.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_backstage_home}
+  \caption{Page d'accueil de l'\ac{IDP} basée sur Backstage~\cite{backstage2023docs}}
+  \label{fig:backstage_home}
+\end{figure}
+
+\section{Choix de la solution IDP}
+\label{sec:idp_choix}
+
+Le choix d'une solution \ac{IDP} est une décision structurante dont les conséquences s'inscrivent dans la durée. Un mauvais choix se traduit inévitablement par une dette technique non négligeable, des coûts de licences imprévus ou une dépendance vis-à-vis d'un fournisseur incompatible avec les évolutions futures d'Uvey. Avant de retenir Backstage, une étude comparative approfondie a été conduite selon plusieurs critères fondamentaux : l'étendue fonctionnelle de la solution, la richesse de l'écosystème de plugins, la viabilité économique à long terme, la vitalité de la communauté open-source et la facilité d'intégration avec les outils existants, comme le montre le Tableau~\ref{tab:idp_comparaison}.
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{2.8cm} C{1.8cm} C{1.8cm} C{1.8cm} C{1.8cm} C{1.8cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{Backstage} & \textbf{Port.io} & \textbf{Cortex} & \textbf{OpsLevel} & \textbf{Dev maison} \\
+    \midrule
+    Open-source        & \textcolor{OliveGreen}{\checkmark} & $\times$ & $\times$ & $\times$ & \textcolor{OliveGreen}{\checkmark} \\
+    Extensibilité      & Élevée & Moyenne & Moyenne & Faible & Totale \\
+    Catalogue logiciel & Natif & Natif & Natif & Natif & À développer \\
+    Communauté         & Très large (\ac{CNCF}) & Limitée & Limitée & Limitée & N/A \\
+    Coût               & Gratuit & Payant & Payant & Payant & Élevé (temps) \\
+    Intégrations       & 200+ plugins & Limitées & Limitées & Limitées & Sur mesure \\
+    Déploiement        & Self-hosted & SaaS & SaaS & SaaS & Self-hosted \\
+    Maturité           & Production (Spotify, Netflix) & En croissance & En croissance & En croissance & Inexistante \\
+    \textbf{Choix}     & \textbf{Retenu} & Non retenu & Non retenu & Non retenu & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison des solutions d'\acl{IDP}}
+  \label{tab:idp_comparaison}
+\end{table}
+
+Backstage se positionne comme la solution la plus pertinente pour plusieurs raisons. Premièrement, son caractère open-source garantit une transparence totale et une absence de dépendance envers un éditeur, évitant ainsi tout risque de coût imprévu. Deuxièmement, son écosystème de plus de deux cents plugins couvre nativement la quasi-totalité des intégrations nécessaires à Uvey --- ArgoCD, GitLab, Grafana, Kubernetes, Azure --- ce qui réduit considérablement l'effort de développement. Troisièmement, Backstage est utilisé en production par des entreprises de premier plan comme Spotify, Netflix, American Airlines ou Zalando, ce qui atteste de sa fiabilité à grande échelle.
+
+La solution \ac{IDP} ainsi construite est conçue pour fournir un \textit{Single Pane of Glass} --- une porte d'entrée unique vers l'écosystème technique d'Uvey ---, simplifier la compréhension du système en faisant abstraction de la complexité infrastructurelle, automatiser les processus récurrents via les \textit{Golden Paths}~\cite{spotify2021goldenpath}, et assurer l'auditabilité de toutes les applications. La Figure~\ref{fig:idp_architecture} illustre l'architecture globale de l'\ac{IDP} et ses interconnexions avec l'infrastructure, faisant apparaître les flux de communication entre Backstage, le proxy Node.js, l'\ac{API} Azure ARM, les clusters \ac{AKS} et les outils d'observabilité.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{fig_idp_architecture}
+  \caption{Architecture globale de l'\ac{IDP} et ses interconnexions avec l'infrastructure~\cite{backstage2023docs}}
+  \label{fig:idp_architecture}
+\end{figure}
+
+\section{Centralisation des services --- Software Catalog}
+\label{sec:software_catalog}
+
+L'une des difficultés courantes dans les organisations qui adoptent une architecture microservices est la perte de visibilité sur l'ensemble de la structure applicative. Qui est responsable de tel service ? Quelle version est déployée en production ? Où se trouve la documentation ? Ces questions, a priori simples, peuvent exiger un temps considérable à résoudre, notamment dans un contexte où le turnover au sein des équipes est important.
+
+C'est précisément pour répondre à ce type de problème que Backstage propose la fonctionnalité de \textbf{Software Catalog}~\cite{backstage2023catalog}, qui recense l'ensemble des microservices présents dans l'infrastructure et fournit pour chacun d'eux les informations suivantes : son nom et sa description, ses propriétaires, ses dépendances vis-à-vis des autres services, son état de déploiement en temps réel via ArgoCD, les URL des outils de monitoring et la documentation OpenAPI. Ces informations sont stockées dans un fichier \texttt{catalog-info.yaml} présent directement dans le dépôt Git du microservice, garantissant ainsi une synchronisation permanente avec le code source. La Figure~\ref{fig:software_catalog} présente la vue liste du \textit{Software Catalog} tel qu'il apparaît dans l'\ac{IDP}, où chaque entrée expose en un coup d'œil le propriétaire du service, son statut de déploiement ArgoCD en temps réel et les liens directs vers sa documentation et ses outils de supervision.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{fig_software_catalog}
+  \caption{Software Catalog de l'\ac{IDP} --- vue liste des microservices~\cite{backstage2023catalog}}
+  \label{fig:software_catalog}
+\end{figure}
+
+\section{Passerelle sécurisée vers Azure --- Proxy Node.js}
+\label{sec:proxy_nodejs}
+
+L'\ac{IDP} est intégrée à l'infrastructure cloud Azure par l'intermédiaire d'un \textbf{proxy Node.js} dédié, conçu et développé dans le cadre de ce projet. Ce composant constitue un élément essentiel de l'architecture de la plateforme : il joue le rôle de couche middleware entre Backstage et l'\ac{API} Azure Resource Manager (\textbf{ARM})~\cite{azure2023arm}. Cette architecture met en pratique le principe de \textit{defense in depth} : aucune accréditation Azure n'est exposée à l'interface utilisateur, et toutes les communications entre la plateforme et les services cloud transitent par ce proxy, qui centralise l'authentification, le contrôle d'accès et la journalisation des échanges.
+
+Ce proxy assure l'authentification auprès des services Azure grâce aux \textit{Managed Identities}, la gestion des jetons d'accès à durée de vie courte et l'exécution des requêtes vers les différents services cloud. Il garantit ainsi qu'aucune information sensible --- identifiants, secrets, clés d'accès à l'\ac{API} Azure --- ne soit exposée au niveau de l'interface Backstage. De plus, le proxy implémente une couche de mise en cache des réponses provenant des services Azure, limitant le nombre de requêtes vers l'\ac{API} ARM et assurant des performances satisfaisantes de l'interface utilisateur.
+
+Grâce à l'\ac{API} Azure Resource Manager, le proxy est capable de récupérer l'état des ressources hébergées sur le cloud --- clusters \ac{AKS}, instances de machines virtuelles, groupes de ressources, services associés. Ces informations sont ensuite filtrées, agrégées et présentées sous une forme simplifiée au sein de l'\ac{IDP}, facilitant la prise de décision. La Figure~\ref{fig:proxy_nodejs} illustre l'architecture du proxy en détaillant les couches d'authentification par \textit{Managed Identity}, de mise en cache et de routage vers l'\ac{API} ARM, tandis que la Figure~\ref{fig:proxy_request_example} présente un exemple concret de requête vers l'\ac{API} Azure ARM, illustrant le format des échanges et la structure des réponses renvoyées à l'\ac{IDP}.
+
+%\vspace{0.4cm}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{fig_proxy_nodejs}
+  \caption{Architecture du proxy Node.js ~\cite{azure2023arm}}
+  \label{fig:proxy_nodejs}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  %\includegraphics[width=0.99\textwidth,height=11cm]{fig_proxy_request_example}
+  \includegraphics[width=\textwidth]{fig_proxy_request_example}
+  \caption{Exemple de requête du proxy Node.js vers l'\ac{API} Azure ARM~\cite{azure2023arm}}
+  \label{fig:proxy_request_example}
+\end{figure}
+
+\section{Accès aux outils d'observabilité}
+\label{sec:acces_outils}
+
+L'\ac{IDP} centralise l'accès à l'ensemble des outils d'observabilité et de gestion opérationnelle utilisés au sein de l'infrastructure, évitant ainsi la navigation entre de multiples interfaces. Dans une architecture microservices mature, la multiplicité des outils de supervision peut elle-même devenir une source de complexité : chaque outil possède sa propre URL, sa propre méthode d'authentification et ses propres conventions de nommage. En l'absence de centralisation, un développeur confronté à un incident doit se souvenir de chaque URL, s'authentifier séparément sur chaque outil et configurer manuellement ses filtres.
+
+La solution adoptée consiste à proposer des liens pré-établis et pré-filtrés pour chaque service vers l'outil de supervision associé. La plateforme intègre ainsi \textit{Grafana} pour la visualisation des métriques et la gestion des indicateurs de performance, \textit{Kibana} pour la lecture et l'analyse des logs applicatifs, et \textit{Jaeger} ainsi que \textit{Tempo} pour le traçage distribué des requêtes au sein de l'architecture microservices. L'un des atouts majeurs de cette architecture est le pré-filtrage des liens selon le service consulté : un développeur qui consulte les informations relatives au microservice \texttt{api-accounting} dans le \textit{Software Catalog} y trouve directement les tableaux de bord Grafana et les index Kibana correspondants à ce service. La Figure~\ref{fig:idp_outils} présente le centre d'accès unifié aux outils d'observabilité depuis l'\ac{IDP}, illustrant comment un développeur accède en un clic aux tableaux de bord Grafana, aux index Kibana et aux traces Jaeger d'un service donné, sans aucune configuration manuelle préalable.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{fig_idp_outils}
+  \caption{Centre d'accès unifié aux outils d'observabilité depuis l'\ac{IDP}~\cite{backstage2023docs}}
+  \label{fig:idp_outils}
+\end{figure}
+
+\section{Gestion des environnements}
+\label{sec:gestion_environnements}
+
+La gestion des environnements figure parmi les principaux points de friction identifiés par les équipes de développement dans les organisations adoptant le cloud natif. Le provisionnement d'un environnement de test nécessite généralement la participation de l'équipe infrastructure, la création d'un ticket formel et un délai d'attente pouvant varier de quelques heures à plusieurs jours. Ce processus est incompatible avec les cycles de développement agile, qui exigent un accès immédiat à des environnements de test pour valider des modifications, corriger des anomalies ou réaliser des démonstrations.
+
+\begin{table}[htbp]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{3cm} L{4.5cm} L{4.5cm} C{1.8cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Type} & \textbf{Objectif} & \textbf{Caractéristiques} & \textbf{Durée de vie} \\
+    \midrule
+    Développement   & Tests locaux et intégration continue & Ressources limitées, données de test synthétiques & Permanente \\
+    Staging         & Validation préproduction & Miroir de la production, données anonymisées & Permanente \\
+    Éphémère (sandbox) & Tests spécifiques à la demande & Créé automatiquement, détruit après usage & 1--72h \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Types d'environnements gérés via l'\ac{IDP}}
+  \label{tab:environments}
+\end{table}
+
+La Figure~\ref{fig:env_creation} illustre l'interface de création d'un environnement éphémère depuis l'\ac{IDP}, permettant à un développeur de spécifier le type d'environnement souhaité, la durée de vie et les services à déployer, le tout sans aucune intervention de l'équipe infrastructure.
+
+\begin{figure}[htbp]
+  \centering
+  %\includegraphics[width=0.95\textwidth,height=12cm]{fig_env_creation}
+  \includegraphics[height=11cm]{fig_env_creation}
+  \caption{Interface de création d'un environnement éphémère depuis l'\ac{IDP}~\cite{backstage2023docs}}
+  \label{fig:env_creation}
+\end{figure}
+
+\section{Réduction de la charge cognitive}
+\label{sec:devex}
+
+L'optimisation de l'expérience développeur (\textit{Developer Experience} ou \acf{DX}) représente l'objectif central de tout projet \ac{IDP}. Au-delà des gains de productivité quantifiables, une bonne expérience développeur favorise la satisfaction des équipes, la rétention du personnel et l'attractivité de l'entreprise pour les nouvelles recrues. Selon de récentes recherches~\cite{noda2023devex}, trois éléments constituent les principales sources de friction dans l'expérience développeur : la fragmentation des outils, les longues boucles de feedback et l'absence de documentation à jour. L'\ac{IDP} construite dans le cadre de ce projet est conçue pour adresser spécifiquement ces trois points.
+
+Avant la mise en œuvre de l'\ac{IDP}, les développeurs d'Uvey devaient naviguer entre plusieurs interfaces pour effectuer une opération de déploiement ou de débogage. Ce phénomène de \textit{context switching} créait une charge cognitive supplémentaire qui se répercutait directement sur les performances, allongeant les délais de résolution des incidents. Chaque transition entre interfaces impliquait une nouvelle authentification, une adaptation à un environnement d'interface différent et une re-contextualisation des informations affichées. Le tableau~\ref{tab:context_switching} illustre concrètement les gains apportés par l'\ac{IDP}.
+
+\begin{table}[htbp]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{5cm} C{3cm} C{3cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Tâche} & \textbf{Avant IDP} & \textbf{Après IDP} \\
+    \midrule
+    Déployer un microservice          & 5 outils & 1 interface \\
+    Diagnostiquer un incident         & 4 outils & 1 interface \\
+    Créer un environnement de test    & Manuel (30 min) & Self-service (5 min) \\
+    Accéder à la documentation        & Wiki séparé & Catalogue intégré \\
+    Vérifier l'état d'un déploiement  & ArgoCD + portail Azure & 1 interface \\
+    Accéder aux métriques d'un service & Grafana (config manuelle) & Lien pré-filtré IDP \\
+    Consulter les logs d'un service   & Kibana (config manuelle) & Lien pré-filtré IDP \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison des flux de travail avant et après l'\ac{IDP}~\cite{noda2023devex}}
+  \label{tab:context_switching}
+\end{table}
+
+Ce gain quantitatif se traduit également par un bénéfice qualitatif tangible : les développeurs disposent de davantage de temps pour des tâches à haute valeur ajoutée, telles que le développement de nouvelles fonctionnalités ou l'amélioration de la qualité du code, au lieu de consacrer leur attention à la navigation entre les outils. Par ailleurs, la réduction du \ac{MTTR} améliore directement la disponibilité de la plateforme et la satisfaction des utilisateurs finaux d'Uvey.
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Ce chapitre a détaillé la mise en œuvre de l'\ac{IDP} basée sur Backstage. Après avoir justifié ce choix technologique par une analyse multicritères comparative, les différentes fonctionnalités du framework ont été présentées : le \textit{Software Catalog} pour la centralisation des services, le proxy Node.js pour une connexion sécurisée entre la plateforme et l'\ac{API} Azure ARM, une interface unifiée d'accès aux outils de monitoring avec des liens filtrés par service, et la gestion entièrement autonome des environnements éphémères en self-service.
+
+Le chapitre suivant traite de la migration vers Azure et de la mise en place de l'infrastructure cloud sous-jacente sur laquelle repose l'\ac{IDP}.

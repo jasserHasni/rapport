@@ -1,0 +1,269 @@
+\chapter{Migration vers Azure et Mise en place de l'Infrastructure}
+\label{chap:azure}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+\noindent Ce chapitre décrit la migration vers Azure et la création de l'infrastructure cloud sur laquelle repose techniquement l'ensemble de la plateforme. Passer d'une infrastructure existante vers un cloud public de cette envergure constitue un chantier à la fois techniquement complexe et organisationnellement exigeant, qui nécessite des choix d'architecture structurants dès la première phase du projet. Sont passés en revue successivement : l'architecture réseau globale, le déploiement et la segmentation des clusters \ac{AKS}, la gestion des identités selon le principe Zero-Trust, la migration du contrôleur Ingress NGINX vers l'Application Gateway via \ac{AGIC}, la migration de la base de données PostgreSQL depuis \ac{GCP} vers Azure, la gestion automatisée des certificats SSL/TLS, et l'intégration de l'ensemble de ces éléments dans l'\ac{IDP}.
+
+\section{Architecture de l'infrastructure Azure}
+\label{sec:architecture_reseau}
+
+\noindent L'infrastructure de référence a été déployée sur Microsoft Azure en suivant une approche d'\acf{IaC} basée sur \tech{Terraform}~\cite{hashicorp2023terraform}. Cette approche garantit la reproductibilité, la traçabilité et l'automatisation de la création et de la gestion de l'ensemble des ressources Azure. La méthode déclarative permet en effet de définir sous forme de code, versionné dans Git, l'ensemble des éléments constitutifs de l'infrastructure : réseaux, clusters, bases de données, politiques de sécurité et identités.
+
+L'architecture, comme le montre la Figure \ref{fig:azure_architecture}, repose sur \ac{AKS}, constitué de plusieurs clusters et services connectés afin d'assurer une bonne répartition des charges, une haute disponibilité des applications et une séparation claire des environnements. Cette architecture multi-clusters apporte une forte isolation entre les workloads : elle évite les problèmes de contention de ressources et permet d'appliquer des politiques de sécurité spécifiques à chaque cluster. Il en résulte notamment une isolation stricte entre les microservices métier et l'infrastructure d'automatisation, telle que les runners de \ac{CI/CD}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_architecture_azure}
+  \caption{Architecture réseau de l'infrastructure Azure AKS~\cite{microsoft2024aksingress}}
+  \label{fig:azure_architecture}
+\end{figure}
+
+\section{Déploiement et segmentation des clusters AKS}
+\label{sec:clusters_aks}
+
+\noindent Cette section présente l'organisation des trois clusters \ac{AKS} déployés, la segmentation réseau adoptée et les choix de plugin réseau qui en découlent.
+
+\subsection{Organisation des clusters}
+
+Trois clusters \ac{AKS} distincts ont été mis en place afin de distinguer avec précision les environnements et les rôles. En répartissant les charges de travail sur trois clusters dédiés, il est possible de réduire drastiquement le périmètre d'impact (\textit{blast radius}) en cas de dysfonctionnement ou d'opération non souhaitée. Ce découpage a également des conséquences sur la gouvernance : chaque cluster dispose de son propre cadre \ac{RBAC}, de son propre quota de ressources et de sa propre politique réseau, comme le résume le tableau~\ref{tab:clusters_aks}.
+
+\begin{table}[H]
+  \centering
+ 
+  \renewcommand{\arraystretch}{1.4}
+  \begin{tabularx}{\textwidth}{L{2.8cm} L{5.5cm} L{5.5cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Cluster} & \textbf{Rôle} & \textbf{Workloads principaux} \\
+    \midrule
+    \texttt{uvey} (applicatif) & Hébergement des microservices métier & \texttt{api-accounting}, \texttt{api-llm-ocr}, \texttt{api-gateway}, services Node.js/Go/Java/Python/C\# \\
+    \midrule
+    Automation & Outils DevOps transverses & Stack ELK, Prometheus, Grafana, gestionnaire de secrets \\
+    \midrule
+    GitLab CI/CD   & Exécution des pipelines \ac{CI/CD} & Runners GitLab haute capacité CPU pour builds parallèles \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Description des trois clusters AKS déployés~\cite{azure2023aks}}
+   \label{tab:clusters_aks}
+\end{table}
+
+\subsection{Architecture réseau et choix du plugin CNI}
+
+L'ensemble des ressources réside dans un seul réseau virtuel Azure (\ac{VNet})~\cite{azure2023vnet}, subdivisé en sous-réseaux aux périmètres distincts : Application Gateway (seul sous-réseau ouvert vers Internet), AKS (nœuds de calcul avec Azure \ac{CNI}), PostgreSQL (entièrement privé avec \textit{Private DNS Zone}), et sous-réseaux temporaires pour le bastion de migration. Le plugin réseau \textit{Azure CNI} a été préféré à Kubenet de manière délibérée : chaque pod obtient une adresse IP directement issue du sous-réseau \ac{VNet}, ce qui permet une interaction native avec l'environnement Azure, simplifie le débogage réseau et élimine la couche de traduction d'adresses NAT qu'introduit Kubenet, laquelle peut compliquer le contrôle des politiques réseau en production. Les \textit{Network Policies} Kubernetes sont activées sur l'ensemble des clusters afin d'implémenter le modèle de communication inter-pods selon le principe du moindre privilège. Le tableau~\ref{tab:cni_comparaison} présente la comparaison des deux options. La Figure~\ref{fig:vnet} représente la topologie du \ac{VNet} et la répartition des sous-réseaux, faisant apparaître l'isolation entre le sous-réseau exposé de l'Application Gateway, les sous-réseaux de calcul AKS et le sous-réseau entièrement privé de la base de données PostgreSQL.
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{4cm} L{5cm} L{5cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{Azure CNI} & \textbf{Kubenet} \\
+    \midrule
+    Adressage des pods     & IP du sous-réseau VNet (routable) & IP privée traduite par NAT \\
+    Intégration services Azure & Native (NSG, Private Link) & Limitée (NAT intermédiaire) \\
+    Débogage réseau        & Simplifié (IP directement visible) & Complexifié (masquage NAT) \\
+    Network Policies       & Supportées nativement & Supportées (avec plugin Calico) \\
+    Consommation d'IP      & Plus élevée (1 IP/pod) & Réduite (IP partagée par nœud) \\
+    Cas d'usage optimal    & Production, intégration VNet poussée & Clusters à faible densité IP \\
+    \textbf{Choix}         & \textbf{Retenu} & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison des plugins réseau AKS --- Azure CNI vs Kubenet}
+  \label{tab:cni_comparaison}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.75\textwidth]{fig_vnet_subnets}
+  \caption{Architecture du \ac{VNet} Azure et intégration réseau~\cite{microsoft2024pgvnet}}
+  \label{fig:vnet}
+\end{figure}
+
+\section{Authentification Zero-Trust avec Managed Identities}
+\label{sec:zerotrust}
+
+\noindent La gestion de l'authentification et de l'identité est assurée via Azure Active Directory avec une \textit{Managed Identity} assignée à chaque cluster, selon le principe du \textbf{Zero-Trust}~\cite{nist2020zerotrust} : aucun secret d'accès statique n'est utilisé pour les communications entre services Azure. Cette décision architecturale supprime une catégorie entière de vulnérabilités liées à la gestion des secrets : rotation oubliée, diffusion accidentelle dans un dépôt Git, ou exposition dans les variables d'environnement d'un conteneur.
+
+Concrètement, une \textit{Managed Identity} est une identité gérée par Azure Active Directory avec un cycle de vie complet --- création, rotation automatique du jeton, révocation --- sans que la gestion des secrets entre jamais dans le périmètre des opérations de l'équipe. Chaque cluster \ac{AKS} bénéficie d'une identité propre à laquelle sont attribuées des permissions \ac{RBAC} minimales, limitées aux ressources Azure strictement requises : accès en lecture au registre de conteneurs, accès en écriture aux \textit{Managed Disks} pour les volumes persistants, et accès au \textit{Key Vault} pour les certificats. La comparaison avec l'approche classique par secrets statiques est présentée dans le tableau~\ref{tab:managed_identities}.
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{4.5cm} L{4.5cm} L{4.5cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{Managed Identities} & \textbf{Secrets statiques (Service Principal)} \\
+    \midrule
+    Gestion du cycle de vie  & Automatique (Azure AD) & Manuelle (rotation périodique) \\
+    Risque de fuite          & Nul (aucun secret manipulé) & Élevé (variables d'env., Git) \\
+    Rotation des credentials & Automatique et transparente & Manuelle, source d'oublis \\
+    Auditabilité             & Native (Azure AD logs) & Partielle \\
+    Intégration AKS          & Native (add-on AAD Pod Identity) & Configuration manuelle \\
+    Conformité Zero-Trust    & Totale & Partielle \\
+    \textbf{Choix}           & \textbf{Retenu} & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison Managed Identities vs secrets statiques}
+  \label{tab:managed_identities}
+\end{table}
+
+\section{Choix des types de machines virtuelles}
+\label{sec:vm_types}
+
+Les node pools sont configurés avec des machines virtuelles de la série E, des instances optimisées pour la mémoire et offrant environ 8 Gio de mémoire par vCPU. Ce choix est motivé par les exigences spécifiques des charges de travail déployées, notamment les composants d'observabilité à forte consommation mémoire, tels que la pile ELK et les traitements \ac{OCR}.
+
+ElasticSearch nécessite une quantité importante de mémoire, car les segments d'indexation et le cache des requêtes sont stockés dans le tas (\textit{heap}) de la JVM. Des nœuds sous-dimensionnés se traduisent par des latences d'indexation dues à des cycles de collecte des objets trop fréquents, voire des erreurs \textit{OutOfMemory} lors de fortes sollicitations. Les modèles d'intelligence artificielle utilisés dans le module \ac{OCR} d'Uvey présentent également des besoins mémoire importants. Par ailleurs, le choix de la génération v5 de la série E est plus avantageux sur le plan des coûts, grâce aux processeurs Intel Ice Lake de dernière génération et à une bande passante mémoire plus élevée, comme le détaille le tableau~\ref{tab:vm_types}.
+
+\begin{table}[htbp]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{3cm} C{3cm} C{2.5cm} C{2.5cm} L{2.5cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Cluster} & \textbf{SKU VM} & \textbf{vCPU} & \textbf{Mémoire (Gio)} & \textbf{Justification} \\
+    \midrule
+    Applicatif     & \texttt{Standard\_E4s\_v5}  & 4   & 32  & Charges de travail à forte consommation mémoire \\
+    Automation & \texttt{Standard\_E8s\_v5}  & 8   & 64  & Plateforme d'observabilité (ELK, Prometheus, Loki et Tempo) \\
+    GitLab CI/CD   & \texttt{Standard\_E16s\_v5} & 16  & 128 & Pics de charge processeur lors des compilations parallèles \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Récapitulatif des types de machines virtuelles utilisés par cluster~\cite{azure2023vm}}
+   \label{tab:vm_types}
+\end{table}
+
+\section{Gestion de l'infrastructure avec Terraform}
+\label{sec:terraform_pipeline}
+
+\noindent Cette section décrit la stratégie de gestion de l'infrastructure via Terraform, en abordant successivement le pipeline d'automatisation nocturne et la structure modulaire du dépôt.
+
+\subsection{Pipeline d'automatisation nocturne}
+
+Un pipeline GitLab \ac{CI/CD} est mis en place pour automatiser le cycle de vie de l'infrastructure. Ce processus exécute chaque jour une séquence composée d'un \texttt{terraform plan} suivi d'un \texttt{terraform apply}, déclenchée automatiquement à \textbf{22h00}.
+
+Plusieurs garanties ont été prévues pour encadrer ce processus et limiter les risques inhérents à un \texttt{terraform apply} entièrement automatisé dans un environnement de production. Tout d'abord, le pipeline réalise systématiquement un \texttt{terraform plan}, rendu visible via un mécanisme d'approbation dans GitLab (\textit{protected environment with manual gate}) : un membre de l'équipe infrastructure approuve chaque soir le plan calculé au cours des vingt-quatre heures écoulées avant que l'\texttt{apply} ne soit déclenché. Ensuite, les ressources hautement sensibles --- destruction de clusters, modifications de sous-réseaux, modifications de base de données --- sont protégées via le paramètre \texttt{lifecycle \{ prevent\_destroy = true \}} du module Terraform, ce qui entraîne le rejet du plan si une telle action est déclenchée par inadvertance. L'état Terraform (\textit{Terraform State}) est versionné via Azure Blob Storage avec la protection contre les exécutions simultanées activée. Enfin, en cas d'anomalie détectée lors du plan --- destruction de ressource non prévue ou modification hors périmètre --- l'équipe est alertée via le canal de communication dédié et le pipeline est bloqué. La Figure~\ref{fig:terraform_pipeline} présente un extrait du pipeline nocturne au moment de l'étape \texttt{terraform apply}, illustrant la séquence d'exécution des étapes ainsi que le mécanisme d'approbation manuelle avant déploiement.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{fig_terraform_pipeline}
+  \caption{Étape d'application Terraform --- extrait du pipeline \ac{CI/CD} nocturne~\cite{hashicorp2023terraform}}
+  \label{fig:terraform_pipeline}
+\end{figure}
+
+\subsection{Structure modulaire du dépôt Terraform}
+
+L'ensemble de l'infrastructure Azure est modélisé selon le principe \ac{IaC} via Terraform, dans lequel toute ressource est définie de manière déclarative, automatisée et versionnée. Afin d'assurer une maintenabilité et une évolution optimales, les ressources cloud sont structurées en modules réutilisables, stockés dans un dépôt Git unique. Cette organisation favorise la standardisation, la réduction de la redondance de code et la cohérence architecturale entre les différents environnements de développement, de tests et de production.
+
+Chaque module Terraform regroupe un ensemble cohérent de ressources réalisant une tâche spécifique. Il existe ainsi des modules dédiés à la gestion des clusters \ac{AKS}, du réseau virtuel Azure, des bases de données PostgreSQL, de l'Application Gateway, du stockage, etc. Chaque module définit une interface claire via des variables d'entrée pour sa configuration et des variables de sortie (\textit{outputs}) facilitant l'intégration avec les autres composants de l'infrastructure. Cette approche rend les composants réutilisables, maintenables et testables lors des phases d'intégration continue.
+
+L'état de l'infrastructure constitue un élément fondamental de cette architecture. Pour garantir l'existence d'une source unique de vérité sur l'état des infrastructures déployées, les états Terraform sont stockés de manière centralisée sur Azure Blob Storage, bénéficiant ainsi de la haute disponibilité et de la durabilité offertes par ce service. La Figure~\ref{fig:terraform_structure} illustre l'organisation du dépôt Terraform en modules réutilisables, faisant apparaître la séparation entre les modules de réseau, de clusters AKS, de base de données et de sécurité, ainsi que le mécanisme de stockage centralisé de l'état sur Azure Blob Storage.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{fig_terraform_structure}
+  \caption{Structure du dépôt Terraform pour l'infrastructure Azure~\cite{hashicorp2023terraform}}
+  \label{fig:terraform_structure}
+\end{figure}
+
+\section{Remplacement de l'Ingress NGINX par l'Application Gateway avec AGIC}
+\label{sec:agic}
+
+\noindent Le contrôleur \textbf{Ingress NGINX}~\cite{nginx2023ingress} assurait initialement le routage des services HTTP et HTTPS dans le cluster \ac{AKS}. Cependant, ce composant présente plusieurs inconvénients structuraux dans un contexte de production à grande échelle : consommation de ressources CPU et mémoire sur les nœuds applicatifs, configuration manuelle de la haute disponibilité, et risques de compatibilité avec Kubernetes lors des mises à jour. Par ailleurs, la terminaison TLS sur les pods NGINX consomme des ressources de calcul qui pourraient être allouées aux microservices métiers.
+
+La solution adoptée est fondée sur l'Azure Application Gateway~\cite{azure2023appgw}, associé à l'extension \acf{AGIC}~\cite{azure2023agic}. Cette approche transfère la logique de routage en dehors du cluster tout en conservant une intégration native avec Kubernetes, et incorpore nativement la protection \ac{WAF} avec le ruleset OWASP 3.x. L'\ac{AGIC} surveille en permanence les objets Ingress Kubernetes et convertit automatiquement ces règles en configuration Application Gateway via l'\ac{API} ARM, sans nécessiter d'ajustement manuel de la configuration du load balancer. La configuration \texttt{Standard\_v2} d'Azure Application Gateway garantit une disponibilité contractuelle de 99,95\% fournie par Microsoft. Le tableau~\ref{tab:nginx_vs_agic} compare les deux approches, et la Figure~\ref{fig:agic_architecture} représente la migration depuis Ingress NGINX vers l'Application Gateway, mettant en évidence le déplacement de la terminaison TLS et du routage hors du cluster ainsi que l'intégration native d'\ac{AGIC} avec les objets Ingress Kubernetes.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{fig_agic_vs_nginx}
+  \caption{Migration de l'Ingress NGINX vers l'Application Gateway avec AGIC~\cite{azure2023agic}}
+  \label{fig:agic_architecture}
+\end{figure}
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{4cm} L{5cm} L{5cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{Ingress NGINX} & \textbf{Application Gateway + AGIC} \\
+    \midrule
+    Terminaison TLS     & Dans le cluster (pod NGINX) & Hors cluster (service managé Azure) \\
+    Consommation cluster & CPU et mémoire des nœuds & Aucune charge sur le cluster \\
+    Haute disponibilité  & Configuration manuelle (HPA / replicas) & Nativement intégrée (\texttt{Standard\_v2}) \\
+    Protection WAF       & Optionnelle (ModSecurity) & Intégrée (OWASP 3.x) \\
+    Gestion des certificats & cert-manager ou secrets Kubernetes & Intégration Azure Key Vault \\
+    SLA Azure            & Non applicable & 99,95\% (\texttt{Standard\_v2}) \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison entre Ingress NGINX et Application Gateway avec AGIC~\cite{azure2023agic}}
+  \label{tab:nginx_vs_agic}
+\end{table}
+
+La Figure~\ref{fig:agic_terraform} présente l'activation d'\ac{AGIC} en tant qu'add-on managé sur le cluster AKS via Terraform, illustrant comment l'add-on est déclaré directement dans la ressource \texttt{azurerm\_kubernetes\_cluster} et lié à l'instance d'Application Gateway provisionnée dans le même module.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{fig_agic_terraform}
+  \caption{Activation d'\ac{AGIC} comme add-on managé sur le cluster AKS~\cite{azure2023agic}}
+  \label{fig:agic_terraform}
+\end{figure}
+
+
+\section{Gestion des certificats SSL/TLS avec cert-manager}
+\label{sec:certmanager}
+
+\noindent L'automatisation du cycle de vie des certificats SSL/TLS est assurée par \tech{cert-manager}~\cite{certmanager2023docs}, déployé sur l'ensemble des clusters \ac{AKS}. Avant la mise en place de cet outil, les certificats étaient gérés manuellement, ce qui entraînait des erreurs fréquentes et des risques de non-renouvellement en temps voulu, pouvant mener à des interruptions de service visibles par les clients. L'utilisation de cert-manager permet la génération des certificats via le fournisseur \textit{Let's Encrypt}~\cite{letsencrypt2023}, leur renouvellement automatique vingt-et-un jours avant expiration, et leur stockage sécurisé dans les secrets Kubernetes.
+
+Le protocole de validation DNS-01 a été retenu en lieu et place d'HTTP-01 pour les raisons détaillées dans le tableau~\ref{tab:certmanager_comparaison} : il prend en charge les domaines internes, les certificats wildcard (\texttt{*.uvey.tn}) et ne nécessite pas l'exposition du port 80 sur Internet. La Figure~\ref{fig:certmanager} illustre le flux complet de gestion des certificats, depuis la création d'un objet \texttt{Certificate} Kubernetes jusqu'à la validation DNS-01 par Let's Encrypt et le stockage automatique du certificat signé dans un secret Kubernetes, le tout sans intervention manuelle.
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{4.5cm} L{4.5cm} L{4.5cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{DNS-01} & \textbf{HTTP-01} \\
+    \midrule
+    Domaines internes      & Supportés & Non supportés \\
+    Certificats wildcard   & Supportés (\texttt{*.uvey.tn}) & Non supportés \\
+    Exposition Internet    & Non requise & Requise (port 80 ouvert) \\
+    Validation via         & Enregistrement DNS TXT & Fichier servi en HTTP \\
+    Automatisation         & Via API DNS Azure & Via Ingress HTTP \\
+    Cas d'usage optimal    & Domaines privés, wildcard & Services publics simples \\
+    \textbf{Choix}         & \textbf{Retenu} & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison des protocoles de validation cert-manager}
+  \label{tab:certmanager_comparaison}
+\end{table}
+
+\noindent Cert-manager s'intègre nativement avec les objets Ingress : il suffit d'annoter un Ingress avec le nom de l'émetteur (\texttt{ClusterIssuer}) pour que cert-manager prenne en charge automatiquement l'intégralité du cycle d'émission et de renouvellement du certificat associé.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{fig_certmanager}
+  \caption{Flux de gestion des certificats SSL/TLS avec Let's Encrypt~\cite{certmanager2023docs}}
+  \label{fig:certmanager}
+\end{figure}
+
+\section{Intégration de l'infrastructure dans l'IDP}
+\label{sec:infra_idp}
+
+\noindent Le backend de l'application repose sur Node.js, qui se comporte comme un proxy entre l'\ac{IDP} et l'\ac{API} ARM~\cite{azure2023arm}, authentifié via \textit{Managed Identity} et disposant uniquement des permissions \ac{RBAC} minimales nécessaires. Ce proxy implémente plusieurs fonctionnalités clés : il protège les accréditations Azure du frontend de l'\ac{IDP} en n'exposant aucun secret à l'interface utilisateur, et met en cache les réponses de l'\ac{API} ARM afin de réduire le nombre d'appels vers Azure.
+
+L'intégration avec la plateforme permet aux développeurs de visualiser en temps réel l'état des instances de calcul Azure --- type de système d'exploitation, localisation, taille et groupe de ressources --- et d'agir directement depuis l'\ac{IDP} via des actions de contrôle (\textit{Start}/\textit{Stop}). L'interface propose également le déploiement d'\textbf{environnements éphémères} en spécifiant un nom d'environnement, une image de conteneur, les ressources CPU/mémoire allouées et une durée de vie (\textit{TTL}), le tout déclenché via un pipeline \textbf{GitLab CI/CD} intégré. Un tableau de bord récapitulatif liste l'ensemble des instances provisionnées --- groupes de ressources, localisations, tailles et statuts (\textcolor{green!60!black}{\textit{Running}} / \textcolor{red}{\textit{Stopped}}) --- offrant une vue unifiée de l'infrastructure sans nécessiter d'accès direct au portail Azure. La Figure~\ref{fig:vm_control} présente le module VM Control de l'\ac{IDP}, exposant le tableau de bord récapitulatif des instances Azure avec leurs statuts en temps réel ainsi que les commandes \textit{Start}/\textit{Stop} accessibles directement depuis l'interface sans accès au portail Azure.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{fig_vm_control}
+  \caption{Module VM Control de l'\ac{IDP}~\cite{azure2023aks}}
+  \label{fig:vm_control}
+\end{figure}
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+\noindent Ce chapitre a présenté en détails la migration vers Azure et la mise en œuvre de l'infrastructure cloud qui constitue le socle de la plateforme d'ingénierie d'Uvey. L'approche \ac{IaC} strictement définie via Terraform permet de disposer d'une infrastructure reproductible, traçable et entièrement automatisée, dans laquelle chaque élément est codifié, documenté et auditable. Le déploiement de trois clusters \ac{AKS} spécifiques garantit une isolation entre les environnements et limite l'impact d'un incident à un seul cluster. L'authentification Zero-Trust via Managed Identities élimine les problèmes liés aux secrets statiques. La migration d'Ingress NGINX vers l'Application Gateway et \ac{AGIC} améliore la sécurité, la fiabilité et les performances des accès. Enfin, la migration de la base de données PostgreSQL s'est déroulée avec succès, sans perte de données ni interruption de service, avec un chiffrement des données garanti tout au long du processus.
+
+Le chapitre suivant traite de la stratégie de déploiement des applications et des pipelines CI/CD mis en œuvre.

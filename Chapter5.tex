@@ -1,0 +1,217 @@
+\chapter{Mise en Place de l'Observabilité}
+\label{chap:observabilite}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+\noindent Ce chapitre présente la pile d'observabilité complète mise en place pour rendre l'infrastructure d'Uvey entièrement observable. Dans une architecture microservices distribuée, la capacité à comprendre ce qui se passe au sein du système est non seulement utile, mais essentielle à son bon fonctionnement. Un incident de production dans un contexte d'observabilité insuffisante se traduit par de longues heures de diagnostic, des clients insatisfaits et une confiance dégradée. Ce chapitre aborde successivement l'architecture générale de la pile d'observabilité, puis ses trois piliers constitutifs : la stack ELK pour la gestion des logs, Prometheus et Grafana pour le monitoring des métriques, et OpenTelemetry pour le traçage distribué.
+
+\section{Architecture globale de l'observabilité}
+\label{sec:obs_architecture}
+
+\noindent Dans un environnement microservices, l'observabilité n'est pas un confort : c'est une condition sine qua non pour opérer efficacement et réagir rapidement au sein d'un système distribué. Un système observable se caractérise par la possibilité de déterminer son état interne à partir de ses sorties externes, sans nécessiter l'ajout d'un mécanisme de débogage spécifique pour chaque nouveau type de problème. La pile d'observabilité déployée couvre les trois piliers fondamentaux recommandés par les experts du domaine~\cite{sridharan2018distributed} : \textbf{logs}, \textbf{métriques} et \textbf{traçage distribué}. Ces trois piliers ont chacun leur utilité propre : les métriques signalent l'apparition d'un problème, les logs fournissent le contexte, et les traces indiquent le chemin emprunté par une requête pour identifier le composant défaillant. La Figure~\ref{fig:obs_architecture} représente l'architecture globale de cette pile, faisant apparaître les flux de données entre les agents de collecte, les pipelines de traitement et les backends de stockage pour chacun des trois piliers.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_observabilite_architecture}
+  \caption{Architecture de la pile d'observabilité --- logs, métriques et traces~\cite{sridharan2018distributed}}
+  \label{fig:obs_architecture}
+\end{figure}
+
+\begin{table}[htbp]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{3cm} L{4cm} L{7cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Pilier} & \textbf{Outil} & \textbf{Rôle} \\
+    \midrule
+    Logs & Fluent-bit & Collecte légère depuis les nœuds AKS \\
+    Logs & Logstash & Transformation et enrichissement des logs \\
+    Logs & Elasticsearch & Indexation et stockage des logs \\
+    Logs & Kibana & Visualisation et exploration des logs \\
+    \midrule
+    Métriques & Prometheus & Scraping et stockage des métriques \\
+    Métriques & Grafana & Visualisation et alerting \\
+    Métriques & kube-state-metrics & Métriques des objets Kubernetes \\
+    \midrule
+    Traces & OpenTelemetry Collector & Réception et exportation des traces \\
+    Traces & Tempo / Jaeger & Stockage et visualisation des traces \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Composants de la pile d'observabilité et leurs rôles}
+  \label{tab:obs_components}
+\end{table}
+
+\section{Collecte des logs avec la stack ELK}
+\label{sec:logs}
+
+\noindent Cette section décrit la chaîne complète de gestion des logs, depuis leur collecte sur les nœuds \ac{AKS} jusqu'à leur visualisation dans Kibana, en passant par leur enrichissement via Logstash.
+
+\subsection{Collecte et enrichissement avec Fluent-bit et Logstash}
+
+\noindent Les fichiers journaux générés par l'ensemble des conteneurs sont collectés par \tech{Fluent-bit}~\cite{fluentbit2023docs}, un agent minimaliste déployé en mode \textit{DaemonSet} sur chaque nœud \ac{AKS}. Cette architecture garantit la présence d'un agent de collecte sur chacun des nœuds du cluster. Fluent-bit a été préféré à son prédécesseur Fluentd en raison de sa faible empreinte mémoire, ce qui présente un avantage notable dans une configuration distribuée, comme le montre la comparaison du tableau~\ref{tab:fluentbit_comparaison}.
+
+Ces données transitent ensuite vers Logstash pour être enrichies et normalisées : des métadonnées relatives à leur environnement d'origine sont ajoutées, telles que le nom du cluster, le namespace Kubernetes, le nom du pod et du microservice. Ces logs sont enfin indexés dans Elasticsearch. Cette étape est essentielle : sans normalisation, des logs bruts provenant de sources hétérogènes et de formats variés (JSON structuré, texte brut, stack traces multilignes) seraient difficiles à interroger de manière cohérente. Logstash utilise des filtres \texttt{grok} et \texttt{mutate} pour normaliser les champs des logs, rendant possible des requêtes transversales telles que : \textit{« afficher tous les logs d'erreur du service api-accounting des 30 dernières minutes »}.
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{4cm} C{4cm} C{4cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{Fluent-bit} & \textbf{Fluentd} \\
+    \midrule
+    Consommation mémoire & $\sim$450 KB & $\sim$40 MB \\
+    Consommation CPU      & Très faible & Modérée \\
+    Plugins disponibles   & Essentiels  & Très nombreux (600+) \\
+    Modèle de déploiement & DaemonSet (nœud) & DaemonSet ou agrégateur \\
+    Langage               & C           & Ruby \\
+    Cas d'usage optimal   & Collecte légère sur nœuds & Pipeline de transformation complexe \\
+    \textbf{Choix}        & \textbf{Retenu} & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison Fluent-bit vs Fluentd pour la collecte des logs}
+  \label{tab:fluentbit_comparaison}
+\end{table}
+
+\subsection{Indexation et visualisation avec Elasticsearch et Kibana}
+
+\noindent Elasticsearch assure le stockage, l'indexation et la recherche des journaux disponibles dans la plateforme. Les logs sont stockés dans des index horodatés, permettant un traitement efficace de grands volumes de données et une recherche chronologique performante. Une stratégie de rétention est définie pour trouver un équilibre entre le besoin historique d'investigation, les éventuelles exigences de conformité et les contraintes de stockage de l'infrastructure.
+
+La plateforme utilise les mécanismes d'\acf{ILM} pour assurer une transition automatique des index entre différents niveaux de stockage en fonction de leur âge et de leur fréquence d'utilisation. Les index les plus récents, consultés le plus fréquemment dans les activités de supervision et d'analyse, sont conservés en phase \textit{hot}, garantissant de hautes performances en lecture et en écriture. Lorsque la fréquence d'utilisation diminue, les données sont transférées en phase \textit{warm}, restant accessibles tout en consommant moins de ressources. La Figure~\ref{fig:kibana_dashboard} présente le tableau de bord Kibana tel qu'il est utilisé en production, permettant d'explorer et de filtrer les logs par microservice, par niveau de sévérité et par fenêtre temporelle. La Figure~\ref{fig:fluentbit_config} illustre la configuration de sortie de Fluent-bit, montrant comment les logs collectés sur les nœuds sont acheminés vers Elasticsearch avec les métadonnées de contexte Kubernetes.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_kibana_dashboard}
+  \caption{Tableau de bord Kibana --- exploration des logs par microservice~\cite{fluentbit2023docs}}
+  \label{fig:kibana_dashboard}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{fig_fluentbit_config}
+  \caption{Configuration de sortie Fluent-bit vers Elasticsearch~\cite{fluentbit2023docs}}
+  \label{fig:fluentbit_config}
+\end{figure}
+
+\section{Monitoring des métriques avec Prometheus et Grafana}
+\label{sec:metriques}
+
+\noindent Cette section présente la mise en place du monitoring des métriques, en décrivant d'abord la collecte et le stockage avec Prometheus, puis la visualisation et l'alerting avec Grafana.
+
+\subsection{Collecte et stockage avec Prometheus}
+
+\noindent Prometheus~\cite{prometheus2023docs} est installé via le chart Helm \texttt{kube-prometheus-stack}, une distribution préintégrée et paramétrable qui regroupe le serveur Prometheus, Alertmanager, kube-state-metrics et node-exporter. Le recours à cette distribution unifiée se justifie par plusieurs raisons : la cohérence des versions entre les différents modules, la présence de règles d'alertes Kubernetes par défaut fondées sur les bonnes pratiques du marché, et une réduction significative de l'effort de configuration. L'architecture de collecte de Prometheus repose sur le mode \textit{pull} : Prometheus interroge chaque microservice et composant infrastructure via leur endpoint \texttt{/metrics} à des intervalles configurables par cible. Il suffit ainsi de donner à Prometheus lui-même les permissions réseau pour accéder à ces endpoints. La comparaison avec les alternatives est présentée dans le tableau~\ref{tab:prometheus_comparaison}.
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{4cm} C{3.5cm} C{3.5cm} C{3cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{Prometheus} & \textbf{InfluxDB} & \textbf{Datadog} \\
+    \midrule
+    Modèle de collecte   & Pull (scraping) & Push & Agent push \\
+    Intégration K8s      & Native (opérateur) & Manuelle & Agent dédié \\
+    Alerting intégré     & Alertmanager & Kapacitor & Natif \\
+    Stockage long terme  & Via Thanos/Cortex & Natif & SaaS \\
+    Coût                 & Open source & Open source & Payant (usage) \\
+    Écosystème           & CNCF (très large) & Limité & Large (SaaS) \\
+    \textbf{Choix}       & \textbf{Retenu} & Non retenu & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison des solutions de collecte de métriques}
+  \label{tab:prometheus_comparaison}
+\end{table}
+
+\noindent L'alerting repose sur des ressources de type \texttt{PrometheusRule} écrites sous forme de code, versionnées dans Git et déployées via ArgoCD. Cette approche \textit{alerts-as-code} présente plusieurs avantages : les règles d'alertes font l'objet d'une revue de code, disposent d'un historique Git et sont déployées de manière automatisée et cohérente. Les alertes couvrent un spectre large : métriques applicatives (latence, taux d'erreur, saturation), métriques infrastructurelles (consommation CPU et mémoire des nœuds, pression disque) et états des objets Kubernetes (pods en CrashLoopBackOff, déploiement bloqué, certificats proches de l'expiration).
+
+\subsection{Visualisation et alerting avec Grafana}
+
+\noindent Grafana constitue la plateforme de visualisation des métriques Prometheus et dispose d'un système d'alerting complexe et hautement personnalisable, permettant une détection rapide des incidents tout en minimisant le bruit opérationnel. Le canal d'envoi des alertes est configuré en fonction de leur criticité, de leur type ou de l'équipe devant les prendre en charge, garantissant ainsi que chaque événement parvient aux personnes en mesure d'y répondre dans les meilleurs délais.
+
+Les tableaux de bord Grafana sont organisés par catégorie d'utilisateurs. Les tableaux de bord de microservices fournissent une vision détaillée des performances applicatives : délais de réponse, taux d'erreur, consommation de ressources. Les tableaux de bord infrastructurels offrent une vue complète des clusters \ac{AKS}, des nœuds Kubernetes, des ressources réseau, du stockage et des services de la plateforme. Enfin, des tableaux de bord synthétiques sont destinés aux décideurs et aux responsables de la plateforme. La Figure~\ref{fig:grafana_dashboard} présente un exemple de tableau de bord microservice en production, exposant les indicateurs de latence P50/P95/P99, le taux d'erreur HTTP et la consommation CPU et mémoire du service. La Figure~\ref{fig:alertmanager} illustre la configuration d'Alertmanager, montrant le routage des alertes vers les canaux de notification en fonction de leur sévérité et de l'équipe concernée.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_grafana_dashboard}
+  \caption{Tableau de bord Grafana --- métriques des microservices en production~\cite{prometheus2023docs}}
+  \label{fig:grafana_dashboard}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{fig_alertmanager}
+  \caption{Configuration des alertes dans Alertmanager~\cite{prometheus2023docs}}
+  \label{fig:alertmanager}
+\end{figure}
+
+\section{Traçage distribué avec OpenTelemetry}
+\label{sec:tracing}
+
+\noindent Cette section présente la mise en place du traçage distribué, en décrivant les choix d'instrumentation multi-langages et le flux de traitement des données de traces.
+
+\subsection{Instrumentation multi-langages}
+
+\noindent Dans un système composé de nombreux microservices implémentés en plusieurs langages de programmation, la solution \tech{OpenTelemetry}~\cite{opentelemetry2023docs} de la \ac{CNCF} a été retenue pour le traçage distribué. OpenTelemetry a été préféré aux solutions propriétaires pour sa neutralité vis-à-vis des fournisseurs : les traces générées par les \ac{SDK} OpenTelemetry peuvent être collectées par n'importe quel backend (Jaeger, Tempo, Zipkin ou Datadog) sans modification du code d'instrumentation, comme l'illustre le tableau~\ref{tab:otel_comparaison}.
+
+\begin{table}[H]
+  \centering
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{L{4cm} C{3cm} C{3cm} C{3cm}}
+    \toprule
+    \rowcolor{uveylight}
+    \textbf{Critère} & \textbf{OpenTelemetry} & \textbf{Jaeger SDK} & \textbf{Zipkin} \\
+    \midrule
+    Vendor-neutral       & Oui (\ac{CNCF})  & Non (Jaeger) & Non (Zipkin) \\
+    Support multi-langages & Natif (10+) & Partiel & Partiel \\
+    Logs + Métriques + Traces & Oui (unifié) & Traces seulement & Traces seulement \\
+    Backend flexible     & Tout backend & Jaeger uniquement & Zipkin uniquement \\
+    Standard industriel  & Oui (adopté \ac{CNCF}) & Non & Non \\
+    \textbf{Choix}       & \textbf{Retenu} & Non retenu & Non retenu \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Comparaison des solutions de traçage distribué}
+  \label{tab:otel_comparaison}
+\end{table}
+
+L'instrumentation s'effectue via les \ac{SDK} disponibles pour chaque langage (Node.js, Java, Go, Python, C\#), ce qui permet la propagation automatique du contexte de trace entre les différents services. Cette propagation automatique est un atout essentiel : sans elle, chaque service devrait relayer manuellement les identifiants de trace reçus dans ses communications entrantes vers ses appels sortants, augmentant considérablement la complexité de mise en œuvre. La Figure~\ref{fig:distributed_tracing} illustre le parcours complet d'une requête traversant plusieurs microservices, en faisant apparaître la décomposition en \textit{spans} imbriqués, les durées de chaque appel et l'identification du composant introduisant la latence la plus élevée.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_distributed_tracing}
+  \caption{Traçage distribué --- parcours d'une requête à travers les microservices~\cite{opentelemetry2023docs}}
+  \label{fig:distributed_tracing}
+\end{figure}
+
+\subsection{Flux OpenTelemetry --- Agent Java vers les backends}
+
+\noindent Le collector OpenTelemetry se connecte à la \ac{JVM} via l'option \texttt{-javaagent} dans le \texttt{Dockerfile} du microservice, ce qui permet de capturer automatiquement les traces, métriques et logs d'un service Spring Boot sans modifier une seule ligne du code applicatif. Ce principe d'instrumentation par agent présente un avantage majeur pour l'adoption : les développeurs n'ont pas besoin d'instrumenter manuellement leurs applications ni d'ajouter des dépendances dans leurs fichiers de build. L'agent intercepte automatiquement les appels aux frameworks et bibliothèques couramment utilisés (Spring Web, JDBC, Redis, Kafka) et produit les \textit{spans} permettant d'obtenir une trace complète du parcours d'une requête.
+
+Ces données sont ensuite transmises vers l'OpenTelemetry Collector, qui les achemine vers les backends appropriés pour chaque type de signal : Tempo ou Jaeger pour les traces, Prometheus pour les métriques, et Elasticsearch pour les logs structurés. L'OpenTelemetry Collector constitue le point clé de cette architecture car il découple les \ac{SDK} d'instrumentation des backends d'ingestion : si l'organisation décide de passer de Jaeger à Tempo, seule la configuration du Collector doit être mise à jour. La Figure~\ref{fig:otel_config} représente ce flux de bout en bout, depuis l'agent Java attaché à la JVM jusqu'au routage des signaux vers Tempo, Prometheus et Elasticsearch par le Collector, illustrant comment un seul point de configuration central gouverne l'ensemble de la chaîne d'observabilité.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{fig_otel_config}
+  \caption{Flux OpenTelemetry --- de l'agent Java au Collector et aux backends~\cite{opentelemetry2023docs}}
+  \label{fig:otel_config}
+\end{figure}
+
+\section{Intégration de l'observabilité dans l'IDP}
+\label{sec:obs_idp}
+
+La pile d'observabilité complète est interconnectée avec l'\ac{IDP}. Grâce au \textit{Software Catalog}, chaque développeur peut accéder instantanément à l'état de santé de ses microservices via des liens profonds pré-filtrés et pré-configurés vers les outils Grafana, Kibana et Jaeger/Tempo. Sans cette intégration, un développeur confronté à une alerte devrait connaître les URLs de chacun de ces outils, naviguer vers le bon tableau de bord et appliquer les bons filtres pour visualiser les données pertinentes --- un processus inutilement long et source d'erreurs sous pression. Grâce à l'intégration au sein de l'\ac{IDP}, un simple clic depuis la fiche de service amène directement au bon tableau de bord, sans que le développeur n'ait à maîtriser l'ensemble de ces outils.
+
+Cette intégration apporte plusieurs bénéfices concrets :
+\begin{itemize}[itemsep=0.15cm, topsep=0.2cm]
+  \item \textbf{Réduction du \ac{MTTR} :} accès direct aux logs, métriques et traces filtrés par service depuis une interface unique, sans navigation manuelle entre les outils.
+  \item \textbf{Corrélation des données :} possibilité de corréler une alerte Grafana avec les logs Kibana et les traces OpenTelemetry correspondants, en suivant la chronologie d'un incident à travers les trois piliers.
+  \item \textbf{Élimination du \textit{context switching} :} les développeurs n'ont plus besoin de naviguer entre quatre interfaces distinctes pour diagnostiquer un incident, ce qui réduit la charge cognitive et le risque d'erreur sous pression.
+  \item \textbf{Démocratisation de l'observabilité :} les développeurs moins expérimentés peuvent accéder aux données de leur service sans formation préalable sur chaque outil.
+\end{itemize}
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+\noindent Ce chapitre a détaillé les différentes étapes de mise en place de la pile d'observabilité complète, transformant l'architecture d'Uvey en une architecture pleinement observable. Les trois piliers fondamentaux ont chacun été analysés : la centralisation de la collecte des logs via la stack ELK avec Fluent-bit en DaemonSet, retenu pour sa faible empreinte mémoire comparée à Fluentd ; le monitoring des métriques via Prometheus, choisi pour son intégration native Kubernetes et son écosystème \ac{CNCF}, ainsi que via Grafana avec des règles d'alertes versionnées dans Git ; et le traçage distribué via OpenTelemetry, distingué par sa neutralité vis-à-vis des fournisseurs et son support multi-langages natif, sans nécessiter de modification du code applicatif grâce à l'approche par agent. L'intégration de l'ensemble de ces solutions via des liens pré-filtrés par service dans l'\ac{IDP} transforme la plateforme en un véritable centre de contrôle opérationnel à destination de l'ensemble des équipes d'ingénierie.

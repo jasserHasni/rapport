@@ -1,0 +1,28 @@
+\chapter*{Introduction Générale}
+\addcontentsline{toc}{chapter}{Introduction Générale}
+
+\noindent Uvey est une startup tunisienne éditrice d'une plateforme SaaS (Software as a Service) B2B de gestion comptable et financière, déployée à destination des PME, TPE et cabinets d'expertise comptable. Son produit repose sur une architecture microservices composée de plus d'une dizaine de services indépendants, rédigés en plusieurs langages (Node.js, Go, Java Spring Boot, Python, C\#), et hébergés jusqu'au début de ce projet sur une infrastructure hétérogène, partiellement managée, sans outillage centralisé.
+
+\vspace{0.4cm}
+
+\noindent À mesure qu'Uvey a évolué d'une architecture initiale vers un écosystème distribué plus complexe, les équipes d'ingénierie ont commencé à absorber une charge opérationnelle croissante, disproportionnée par rapport à la taille de l'organisation. Un développeur souhaitant déployer une mise à jour devait naviguer entre cinq interfaces distinctes : le portail Azure pour l'état des ressources, l'interface ArgoCD pour le statut du déploiement, Grafana pour les métriques, Kibana pour les logs, et GitLab pour les pipelines. La création d'un environnement de test nécessitait une intervention manuelle de l'équipe infrastructure, avec un délai moyen de trente minutes. La résolution d'un incident de production mobilisait en moyenne quarante-cinq minutes, non pas à cause de la complexité du problème, mais à cause du temps passé à reconstituer manuellement le contexte depuis des outils non connectés. Les déploiements en production prenaient vingt minutes, dont une partie significative était consacrée à des vérifications manuelles redondantes. Enfin, l'absence d'un mécanisme de détection des dérives de configuration exposait l'infrastructure à des états divergents non contrôlés entre les environnements.
+
+\vspace{0.4cm}
+
+\noindent Ces dysfonctionnements, pris isolément, pourraient sembler mineurs. Mais leur cumul représentait un coût opérationnel réel : des cycles de livraison ralentis, une frustration croissante des équipes, et un risque accru d'incidents en production dans un contexte où la fiabilité de la plateforme conditionne directement la confiance des clients d'Uvey. La question posée en début de projet était donc la suivante : comment doter des équipes d'ingénierie de taille modeste d'une infrastructure cloud-native de niveau production, sans sacrifier la vélocité de développement ni alourdir davantage la charge cognitive des développeurs ?
+
+\vspace{0.4cm}
+
+\noindent La réponse apportée dans le cadre de ce projet de fin d'études s'articule autour de deux axes complémentaires. Le premier est la migration complète de l'infrastructure vers Microsoft Azure, provisionnée via Terraform selon une approche Infrastructure as Code, avec trois clusters AKS (Azure Kubernetes Service) dédiés, un modèle d'authentification Zero-Trust basé sur les Managed Identities, et un remplacement du contrôleur Ingress NGINX par l'Application Gateway avec protection WAF (Web Application Firewall) intégrée. Le second est la mise en place d'une \textbf{Internal Developer Platform} (IDP) basée sur Backstage, agissant comme point d'entrée unique vers l'ensemble de l'écosystème technique : catalogue des microservices, accès aux outils d'observabilité avec liens pré-filtrés par service, provisionnement autonome des environnements de test en self-service, et intégration du flux GitOps complet avec ArgoCD. Ces deux axes sont complétés par une pile d'observabilité unifiée couvrant les trois piliers fondamentaux : logs via la stack ELK (Elasticsearch, Logstash, Kibana), métriques via Prometheus et Grafana, et traçage distribué via OpenTelemetry.
+
+\vspace{0.5cm}
+
+\noindent \textbf{Ce rapport est organisé en cinq chapitres :}
+%\begin{itemize}
+Le \textbf{Chapitre 1} pose le cadre général du projet : contexte et motivations spécifiques à Uvey, présentation de l'entreprise d'accueil, problématique opérationnelle identifiée sur le terrain avec ses impacts mesurés, objectifs techniques et fonctionnels, et méthodologies retenues (Scrum et GitOps).
+Le \textbf{Chapitre 2} présente la conception et la mise en place de l'Internal Developer Platform basée sur Backstage : choix de la solution par analyse comparative, Software Catalog, proxy Node.js sécurisé vers l'API (Application Programming Interface) Azure ARM (Azure Resource Manager), accès unifié aux outils d'observabilité, et gestion des environnements éphémères en self-service.
+Le \textbf{Chapitre 3} détaille la migration vers Azure et la mise en place de l'infrastructure cloud multi-clusters : architecture réseau VNet, déploiement des trois clusters AKS, authentification Zero-Trust, remplacement de l'Ingress NGINX par l'Application Gateway avec AGIC, gestion automatisée via Terraform, et migration de la base de données PostgreSQL depuis GCP (Google Cloud Platform).
+Le \textbf{Chapitre 4} décrit la stratégie de déploiement complète : pipelines GitLab CI/CD, flux GitOps avec ArgoCD et Helm Charts, intégration dans l'IDP, scénario de diagnostic d'incident de bout en bout, et métriques de performance avant/après.
+Le \textbf{Chapitre 5} présente la pile d'observabilité unifiée : collecte des logs avec Fluent-bit et la stack ELK, monitoring des métriques avec Prometheus et Grafana, traçage distribué avec OpenTelemetry, et intégration de l'ensemble dans l'IDP via des liens pré-filtrés par service.
+Une \textbf{conclusion générale} synthétise les réalisations, analyse les difficultés rencontrées et les leçons apprises.
+%\end{itemize}

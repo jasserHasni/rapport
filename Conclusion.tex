@@ -1,0 +1,74 @@
+\chapter*{Conclusion Générale et Perspectives}
+\addcontentsline{toc}{chapter}{Conclusion Générale et Perspectives}
+\label{chap:conclusion}
+
+\noindent Ce projet de fin d'études a été réalisé chez la startup Uvey, en Tunisie. Il a
+permis de concevoir, déployer et valider une solution répondant aux défis opérationnels
+d'une équipe d'ingénierie gérant une architecture microservices en forte croissance. Au
+delà d'une simple mise en œuvre de nouvelles technologies, ce projet a transfiguré les
+pratiques de livraison logicielle et le mode opératoire en infrastructure de l'entreprise,
+les rendant bien plus efficaces et reproductibles.
+
+\medskip
+\noindent Les objectifs du projet ont été totalement, ou pour le moins grandement,
+atteints. Une infrastructure cloud-native sur Azure, répartie sur trois clusters \ac{AKS},
+a été conçue et déployée via \textbf{Terraform}. Un pipeline \textbf{GitOps} complet a
+été bâti, et une stack unifiée d'observabilité couvrant les logs, les métriques ainsi que
+le tracing distribué a été mise en place. La migration de la base \textbf{PostgreSQL}
+depuis \ac{GCP} vers Azure a été effectuée sans perte de données et sans interruption de
+service. Un portail \textbf{Backstage} a été installé pour faciliter l'accès à l'ensemble
+des outils de l'équipe.
+\medskip
+
+\noindent Ce projet a été un véritable apprentissage. La migration d'\textbf{Ingress NGINX}
+vers \textbf{Application Gateway} avec \textbf{AGIC} a demandé de détailler les
+annotations de chacun des microservices et de créer un environnement de test dédié. Lors
+de la migration de \textbf{PostgreSQL}, des problèmes de compatibilité d'extensions entre
+\textit{Cloud SQL} et \textit{Azure Flexible Server} ont nécessité des ajustements du
+module \textbf{Terraform} avant de pouvoir reprendre le processus. Pour pallier aux
+limitations de débit de l'API \textbf{ARM} d'Azure, nous sommes passés par un proxy
+\textbf{Node.js} sur lequel nous avons implémenté un cache. D'un point de vue
+organisationnel, la pratique de \textbf{Scrum} dans un contexte d'Infrastructure as Code
+a révélé qu'il fallait prévoir des sprints avec plus de marge, ainsi qu'intégrer
+explicitement la validation en environnement pré-prod dans la \textit{Definition of Done}.
+
+\medskip
+\noindent Pour dépasser ces challenges, nous sommes peu à peu convaincus qu'à ce jour,
+aucune réussite sur du cloud public ne s'est affranchie de deux piliers fondamentaux~:
+la \textbf{documentation architecturale} et l'\textbf{anticipation rigoureuse des
+contraintes environnementales}. Ces deux dimensions sont tout aussi déterminantes que la
+maîtrise technique pour réussir une transition vers le cloud.
+
+%\bigskip
+
+%\noindent \textbf{\large Perspectives :}
+
+\medskip
+\noindent Les travaux réalisés ouvrent plusieurs axes d'évolution naturels, structurés
+autour de trois dimensions~:
+
+\medskip
+\noindent \textbf{Enrichissement de la plateforme développeur.} Le portail
+\textbf{Backstage} pourrait être enrichi par l'intégration de \textit{scaffolders}
+permettant aux équipes de provisionner elles-mêmes de nouveaux microservices conformes
+aux standards architecturaux d'Uvey, réduisant ainsi davantage la friction entre
+développement et infrastructure. Par ailleurs, l'adoption de \textbf{Karpenter} en
+remplacement du \textit{Cluster Autoscaler} d'Azure permettrait un provisionnement des
+n\oe{}uds \ac{AKS} plus réactif et économiquement optimisé, notamment grâce à la gestion
+des instances Spot.
+
+\medskip
+\noindent \textbf{Renforcement de la sécurité et de l'observabilité.} Le déploiement
+d'une stratégie réseau de type \textbf{zero-trust} avec \textbf{Cilium} ou \textbf{Azure
+Network Policy} serait un prolongement naturel de l'existant avec \textit{Managed
+Identity}, en allant jusqu'à contrôler chaque interconnexion entre les différents services
+au sein des clusters. Du point de vue de l'observabilité, la généralisation du tracing
+distribué vers un modèle \textbf{eBPF} permettrait de capter des signaux de performance
+de manière non-intrusive, offrant une visibilité complète sur les échanges réseau
+sous-jacents.
+
+\medskip
+\noindent \textbf{Conformité et certification.} À terme, la maturité de la plateforme
+ouvrira la possibilité de viser une certification \textbf{ISO 27001} ou une attestation
+\textbf{SOC 2}, des labels recherchés par les FinTechs pour médiatiser leur confiance
+auprès de clients B2B et accélérer leur processus de vente sur des marchés régulés.
